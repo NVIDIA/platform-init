@@ -65,6 +65,22 @@ log_debug() {
 pet_watchdog() {
     if [ -c "$WATCHDOG_DEV" ]; then
         echo "." > "$WATCHDOG_DEV" 2>/dev/null
+    else
+        log_debug "Watchdog device $WATCHDOG_DEV not found, skipping pet"
+    fi
+}
+
+#######################################
+# Disable watchdog via magic close
+# Writing 'V' before closing tells the driver to stop the watchdog
+# This prevents shortened timeout from affecting subsequent boot stages
+#######################################
+disable_watchdog() {
+    if [ -c "$WATCHDOG_DEV" ]; then
+        echo "V" > "$WATCHDOG_DEV" 2>/dev/null
+        log "Watchdog disabled via magic close"
+    else
+        log "Watchdog device $WATCHDOG_DEV not found, skipping disable"
     fi
 }
 
@@ -82,12 +98,13 @@ check_i2c_device() {
 
     # Use i2cdetect to probe the specific address
     # -y: disable interactive mode
-    # Using default quick write probe (not -r read byte which fails for tca9535)
-    # Pattern: space before hex digits to match detected device, not row labels like "20:"
+    # Using default quick write probe (not -r read byte which fails for pca9535)
+    # Pattern: space before hex digits or "UU" (device bound by driver)
     result=$(i2cdetect -y "$bus" "$addr" "$addr" 2>&1)
     log_debug "i2cdetect -y $bus $addr $addr output: $result"
     
-    if echo "$result" | grep -q " [0-9a-f][0-9a-f]"; then
+    # Match either hex address (unbound) or UU (driver bound)
+    if echo "$result" | grep -qE " ([0-9a-f]{2}|UU)"; then
         log_debug "Device found at bus $bus addr $addr"
         return 0
     fi
@@ -97,23 +114,32 @@ check_i2c_device() {
 
 #######################################
 # Bind I2C device driver via sysfs
+# Triggers re-probe of a DT-defined device that failed initial probe
 # Arguments:
 #   $1 - I2C bus number
-#   $2 - Device type (e.g., tca9535)
-#   $3 - I2C device address (hex, e.g., 0x20)
+#   $2 - I2C device address (hex, e.g., 0x20)
 #######################################
 bind_i2c_device() {
     bus="$1"
-    dev_type="$2"
-    addr="$3"
+    addr="$2"
 
-    log "Binding $dev_type at bus $bus address $addr"
-    bind_result=$(echo "$dev_type $addr" > /sys/bus/i2c/devices/i2c-${bus}/new_device 2>&1)
+    # Convert hex address to the format used in sysfs (e.g., 1-0020)
+    # Remove 0x prefix and ensure 4-digit padding
+    addr_dec=$(printf "%d" "$addr")
+    addr_sysfs=$(printf "%d-%04x" "$bus" "$addr_dec")
+
+    log "Binding device $addr_sysfs"
+
+    # Unbind first (ignore error if not bound) - ensures clean state
+    echo "$addr_sysfs" > /sys/bus/i2c/drivers/pca953x/unbind 2>/dev/null
+
+    # Trigger driver bind - driver will re-read all DT properties
+    bind_result=$(echo "$addr_sysfs" > /sys/bus/i2c/drivers/pca953x/bind 2>&1)
     if [ $? -eq 0 ]; then
-        log "Successfully bound $dev_type at bus $bus address $addr"
+        log "Successfully bound device $addr_sysfs"
         return 0
     else
-        log "WARNING - Failed to bind $dev_type at bus $bus address $addr: $bind_result"
+        log "WARNING - Failed to bind device $addr_sysfs: $bind_result"
         return 1
     fi
 }
@@ -148,9 +174,9 @@ wait_and_bind_board() {
         if check_i2c_device "$bus" "$iox0_addr"; then
             log "$board_name detected after $((attempt * POLL_INTERVAL))s"
             
-            # Bind both IO expanders for this board
-            bind_i2c_device "$bus" "tca9535" "$iox0_addr"
-            bind_i2c_device "$bus" "tca9535" "$iox1_addr"
+            # Trigger driver re-bind for both IO expanders (DT-defined devices)
+            bind_i2c_device "$bus" "$iox0_addr"
+            bind_i2c_device "$bus" "$iox1_addr"
             
             return 0
         fi
@@ -200,6 +226,11 @@ else
     log "Creating failure marker: $STANDBY_POWER_FAILURE"
     touch "$STANDBY_POWER_FAILURE"
 fi
+
+# Disable watchdog before handing off to obmc-init.sh
+# This prevents shortened timeout from affecting factory reset or other boot operations
+# Systemd will re-enable and manage watchdog when it starts
+disable_watchdog
 
 log "Script finished"
 echo "=== standby_power_wait.sh finished ===" >> "$LOG_FILE"
