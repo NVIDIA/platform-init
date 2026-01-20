@@ -1,8 +1,8 @@
-# vr-nvl144-hmc Initramfs Scripts
+# vr-nvl72-hmc Initramfs Scripts
 
 ## Overview
 
-This directory contains initramfs scripts for the vr-nvl144-hmc platform that run
+This directory contains initramfs scripts for the vr-nvl72-hmc platform that run
 before the main OpenBMC init to ensure standby power is available and bind I2C
 IO expander drivers.
 
@@ -87,4 +87,5 @@ Devices to disable in DT:
 |-------|---------|---------------------|
 | BRD0 | 2 minutes (24 attempts × 5s) | Create `/run/standby_power_failure` |
 | BRD1 | 10 seconds (2 attempts × 5s) | Create `/run/brd1_not_present` |
+
 

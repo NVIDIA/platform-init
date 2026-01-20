@@ -237,3 +237,4 @@ echo "=== standby_power_wait.sh finished ===" >> "$LOG_FILE"
 
 # Exit 0 to allow boot to continue (systemd services will check markers)
 exit 0
+
