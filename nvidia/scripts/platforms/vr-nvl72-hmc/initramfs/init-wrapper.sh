@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# init-wrapper.sh - Initramfs init wrapper for vr-nvl144-hmc
+# init-wrapper.sh - Initramfs init wrapper for vr-nvl72-hmc
 #
 # This script runs as /init in initramfs before the main obmc-init.sh.
 # It mounts necessary filesystems and runs standby_power_wait.sh to ensure
@@ -22,3 +22,4 @@ mount -t tmpfs tmpfs /run -o mode=755,nodev
 
 # Continue with main init script, passing through any arguments
 exec /obmc-init.sh "$@"
+
