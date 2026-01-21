@@ -59,14 +59,32 @@ log_debug() {
 }
 
 #######################################
+# Open watchdog device on fd 3 - keep open for duration of script
+# This avoids issues with repeated open/close cycles
+#######################################
+if [ -c "$WATCHDOG_DEV" ]; then
+    exec 3>"$WATCHDOG_DEV"
+    if [ $? -eq 0 ]; then
+        WATCHDOG_OPEN=1
+        log "Watchdog device opened on fd 3"
+    else
+        WATCHDOG_OPEN=0
+        log "WARNING: Failed to open watchdog device"
+    fi
+else
+    WATCHDOG_OPEN=0
+    log_debug "Watchdog device $WATCHDOG_DEV not found at script start"
+fi
+
+#######################################
 # Pet the watchdog to prevent system reset
-# Writes to /dev/watchdog if it exists
+# Writes to fd 3 which is kept open to /dev/watchdog
 #######################################
 pet_watchdog() {
-    if [ -c "$WATCHDOG_DEV" ]; then
-        echo "." > "$WATCHDOG_DEV" 2>/dev/null
+    if [ "$WATCHDOG_OPEN" = "1" ]; then
+        echo "." >&3 2>/dev/null
     else
-        log_debug "Watchdog device $WATCHDOG_DEV not found, skipping pet"
+        log_debug "Watchdog not open, skipping pet"
     fi
 }
 
@@ -76,11 +94,13 @@ pet_watchdog() {
 # This prevents shortened timeout from affecting subsequent boot stages
 #######################################
 disable_watchdog() {
-    if [ -c "$WATCHDOG_DEV" ]; then
-        echo "V" > "$WATCHDOG_DEV" 2>/dev/null
+    if [ "$WATCHDOG_OPEN" = "1" ]; then
+        echo "V" >&3 2>/dev/null
+        exec 3>&-
+        WATCHDOG_OPEN=0
         log "Watchdog disabled via magic close"
     else
-        log "Watchdog device $WATCHDOG_DEV not found, skipping disable"
+        log "Watchdog was not open, skipping disable"
     fi
 }
 
