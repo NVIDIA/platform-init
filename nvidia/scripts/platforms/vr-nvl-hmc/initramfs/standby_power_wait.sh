@@ -37,9 +37,6 @@ BRD1_MAX_ATTEMPTS=5
 STANDBY_POWER_FAILURE="/run/standby_power_failure"
 BRD1_NOT_PRESENT="/run/brd1_not_present"
 
-# Watchdog device
-WATCHDOG_DEV="/dev/watchdog"
-
 #######################################
 # Log message to file and console
 # Arguments:
@@ -56,52 +53,6 @@ log() {
 #######################################
 log_debug() {
     echo "standby_power_wait: [DEBUG] $*" >> "$LOG_FILE"
-}
-
-#######################################
-# Open watchdog device on fd 3 - keep open for duration of script
-# This avoids issues with repeated open/close cycles
-#######################################
-if [ -c "$WATCHDOG_DEV" ]; then
-    exec 3>"$WATCHDOG_DEV"
-    if [ $? -eq 0 ]; then
-        WATCHDOG_OPEN=1
-        log "Watchdog device opened on fd 3"
-    else
-        WATCHDOG_OPEN=0
-        log "WARNING: Failed to open watchdog device"
-    fi
-else
-    WATCHDOG_OPEN=0
-    log_debug "Watchdog device $WATCHDOG_DEV not found at script start"
-fi
-
-#######################################
-# Pet the watchdog to prevent system reset
-# Writes to fd 3 which is kept open to /dev/watchdog
-#######################################
-pet_watchdog() {
-    if [ "$WATCHDOG_OPEN" = "1" ]; then
-        echo "." >&3 2>/dev/null
-    else
-        log_debug "Watchdog not open, skipping pet"
-    fi
-}
-
-#######################################
-# Disable watchdog via magic close
-# Writing 'V' before closing tells the driver to stop the watchdog
-# This prevents shortened timeout from affecting subsequent boot stages
-#######################################
-disable_watchdog() {
-    if [ "$WATCHDOG_OPEN" = "1" ]; then
-        echo "V" >&3 2>/dev/null
-        exec 3>&-
-        WATCHDOG_OPEN=0
-        log "Watchdog disabled via magic close"
-    else
-        log "Watchdog was not open, skipping disable"
-    fi
 }
 
 #######################################
@@ -188,9 +139,6 @@ wait_and_bind_board() {
     while [ "$attempt" -lt "$max_attempts" ]; do
         attempt=$((attempt + 1))
 
-        # Pet the watchdog to prevent reset during long waits
-        pet_watchdog
-
         if check_i2c_device "$bus" "$iox0_addr"; then
             log "$board_name detected after $((attempt * POLL_INTERVAL))s"
             
@@ -246,11 +194,6 @@ else
     log "Creating failure marker: $STANDBY_POWER_FAILURE"
     touch "$STANDBY_POWER_FAILURE"
 fi
-
-# Disable watchdog before handing off to obmc-init.sh
-# This prevents shortened timeout from affecting factory reset or other boot operations
-# Systemd will re-enable and manage watchdog when it starts
-disable_watchdog
 
 log "Script finished"
 echo "=== standby_power_wait.sh finished ===" >> "$LOG_FILE"
