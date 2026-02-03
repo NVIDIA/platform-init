@@ -19,11 +19,13 @@ LOG_FILE="/run/standby_power_wait.log"
 BRD0_BUS="1"
 BRD0_IOX0_ADDR="0x20"
 BRD0_IOX1_ADDR="0x21"
+BRD0_HPM_FRU_ADDR="0x50"
 
 # Board 1 configuration (optional)
 BRD1_BUS="7"
 BRD1_IOX0_ADDR="0x20"
 BRD1_IOX1_ADDR="0x21"
+BRD1_HPM_FRU_ADDR="0x50"
 
 # Timing configuration
 POLL_INTERVAL=1
@@ -89,40 +91,43 @@ check_i2c_device() {
 # Arguments:
 #   $1 - I2C bus number
 #   $2 - I2C device address (hex, e.g., 0x20)
+#   $3 - Device driver name (e.g., "pca953x")
 #######################################
 bind_i2c_device() {
     bus="$1"
     addr="$2"
+    dev_type="$3"
 
     # Convert hex address to the format used in sysfs (e.g., 1-0020)
     # Remove 0x prefix and ensure 4-digit padding
     addr_dec=$(printf "%d" "$addr")
     addr_sysfs=$(printf "%d-%04x" "$bus" "$addr_dec")
 
-    log "Binding device $addr_sysfs"
+    log "Binding device $addr_sysfs with driver $dev_type"
 
     # Unbind first (ignore error if not bound) - ensures clean state
-    echo "$addr_sysfs" > /sys/bus/i2c/drivers/pca953x/unbind 2>/dev/null
+    echo "$addr_sysfs" > "/sys/bus/i2c/drivers/${dev_type}/unbind" 2>/dev/null
 
     # Trigger driver bind - driver will re-read all DT properties
-    bind_result=$(echo "$addr_sysfs" > /sys/bus/i2c/drivers/pca953x/bind 2>&1)
+    bind_result=$(echo "$addr_sysfs" > "/sys/bus/i2c/drivers/${dev_type}/bind" 2>&1)
     if [ $? -eq 0 ]; then
         log "Successfully bound device $addr_sysfs"
         return 0
     else
-        log "WARNING - Failed to bind device $addr_sysfs: $bind_result"
+        log "WARNING - Failed to bind device $addr_sysfs with driver $dev_type: $bind_result"
         return 1
     fi
 }
 
 #######################################
-# Wait for board and bind its IO expanders
+# Wait for board and bind its IO expanders and HPM FRU
 # Arguments:
 #   $1 - Board name (for logging)
 #   $2 - I2C bus number
 #   $3 - IO expander 0 address
 #   $4 - IO expander 1 address
-#   $5 - Max poll attempts
+#   $5 - HPM FRU address
+#   $6 - Max poll attempts
 # Returns:
 #   0 if board found and bound, 1 if timeout
 #######################################
@@ -131,7 +136,8 @@ wait_and_bind_board() {
     bus="$2"
     iox0_addr="$3"
     iox1_addr="$4"
-    max_attempts="$5"
+    hpm_fru_addr="$5"
+    max_attempts="$6"
 
     log "Waiting for $board_name (bus $bus)..."
     
@@ -143,8 +149,10 @@ wait_and_bind_board() {
             log "$board_name detected after $((attempt * POLL_INTERVAL))s"
             
             # Trigger driver re-bind for both IO expanders (DT-defined devices)
-            bind_i2c_device "$bus" "$iox0_addr"
-            bind_i2c_device "$bus" "$iox1_addr"
+            bind_i2c_device "$bus" "$iox0_addr" "pca953x"
+            bind_i2c_device "$bus" "$iox1_addr" "pca953x"
+            # Trigger driver re-bind for HPM FRU
+            bind_i2c_device "$bus" "$hpm_fru_addr" "at24"
             
             return 0
         fi
@@ -176,11 +184,11 @@ log "BRD0 (required): bus $BRD0_BUS, timeout ${BRD0_TIMEOUT_SECONDS}s"
 log "BRD1 (optional): bus $BRD1_BUS, timeout $((BRD1_MAX_ATTEMPTS * POLL_INTERVAL))s"
 
 # Wait for Board 0 (required)
-if wait_and_bind_board "BRD0" "$BRD0_BUS" "$BRD0_IOX0_ADDR" "$BRD0_IOX1_ADDR" "$BRD0_MAX_ATTEMPTS"; then
+if wait_and_bind_board "BRD0" "$BRD0_BUS" "$BRD0_IOX0_ADDR" "$BRD0_IOX1_ADDR" "$BRD0_HPM_FRU_ADDR" "$BRD0_MAX_ATTEMPTS"; then
     log "BRD0 ready, checking for BRD1..."
     
     # Board 0 is up, now check for Board 1 (optional, shorter timeout)
-    if wait_and_bind_board "BRD1" "$BRD1_BUS" "$BRD1_IOX0_ADDR" "$BRD1_IOX1_ADDR" "$BRD1_MAX_ATTEMPTS"; then
+    if wait_and_bind_board "BRD1" "$BRD1_BUS" "$BRD1_IOX0_ADDR" "$BRD1_IOX1_ADDR" "$BRD1_HPM_FRU_ADDR" "$BRD1_MAX_ATTEMPTS"; then
         log "BRD1 ready"
     else
         log "BRD1 not present (single-board configuration)"
