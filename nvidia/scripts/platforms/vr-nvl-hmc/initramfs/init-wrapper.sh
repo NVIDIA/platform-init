@@ -15,10 +15,12 @@ mount -t sysfs sysfs /sys
 mount -t proc proc /proc
 mount -t tmpfs tmpfs /run -o mode=755,nodev
 
-# Wait for standby power devices to appear on I2C
-# On timeout, this creates /run/standby_power_failure marker
-# Logs are written to /run/standby_power_wait.log
+# Wait for standby power devices on I2C first so GPIO (e.g. CP2112) may be
+# enumerated before we read BRD0 power and U-Boot env for RTC sync.
+# On timeout, creates /run/standby_power_failure; logs to /run/standby_power_wait.log
 /standby_power_wait.sh
+
+/rtc-sync.sh > /dev/kmsg 2>&1
 
 # Continue with main init script, passing through any arguments
 exec /obmc-init.sh "$@"
