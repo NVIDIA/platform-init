@@ -2,8 +2,8 @@
 #
 # RTC Sync (initramfs) - Run during early boot to set system time from RTC.
 #
-# Decision: try external I2C RTC (NCT3018Y) only when host power is down, so we
-# don't collide with the host on the shared bus. Primary signal: BRD0_RUN_POWER_PG-I
+# Decision: try external I2C RTC only when host power is down, so we don't
+# collide with the host on the shared bus. Primary signal: BRD0_RUN_POWER_PG-I
 # (1 = host up -> internal RTC only; 0 = host down -> try external then internal).
 # Fallback when GPIO unavailable: U-Boot boot reason (reset_reason from MTD u-boot-env).
 # We run after standby_power_wait so I2C/GPIO (e.g. CP2112) have time to enumerate.
@@ -11,18 +11,42 @@
 # When both GPIO and boot reason are unknown we use internal RTC only (safe default:
 # avoids possible I2C collision; downside is wrong timestamps until NTP or next sync).
 #
-# Requires: for external RTC: hwclock, i2ctransfer (i2c-tools); for internal RTC:
-# devmem, date; gpiofind/gpioget (libgpiod-tools).
+# External RTC: P4105 may be populated with either the Nuvoton NCT3018Y-R or the
+# NXP PCF85053A. Both chips sit at I2C address 0x6f and expose a vendor-ID byte at
+# register 0x10 (Nuvoton = 0x5c, NXP = 0x4e). We probe that byte to pick the right
+# Linux driver (nct3018y vs pcf85053a) and bind it via i2c-dev's new_device. Once
+# bound, both expose a standard /dev/rtcN that hwclock can read identically.
 #
-# The kernel rtc-nct3018y driver and I2C core do not retry on bus busy; we retry
-# the external RTC path a few times before falling back to internal RTC.
+# Requires: date (BusyBox or coreutils, with `-s @SECONDS` support);
+# i2ctransfer (i2c-tools); gpiofind/gpioget (libgpiod-tools); hwclock is
+# optional - used only for the best-effort write-back from system clock to
+# /dev/rtc0 after a successful external RTC sync. We deliberately do *not*
+# use `hwclock -s` to apply RTC time to the system clock: empirically, on
+# this image (BusyBox 1.37 hwclock + rtc-aspeed driver), `hwclock -s -f
+# /dev/rtc0` always fails with "select() to /dev/rtc0 to wait for clock
+# tick timed out" after ~10s. The root cause has not been pinned down -
+# the rtc-aspeed driver does not clear RTC_FEATURE_UPDATE_INTERRUPT, so the
+# rtc framework's primary UIE path (hrtimer-based, interface.c:598-626)
+# should be in use, but evidently is not delivering ticks to /dev/rtc0
+# readers within hwclock's timeout. Rather than chase that, we sidestep it
+# by reading /sys/class/rtc/rtc<N>/since_epoch and applying with
+# `date -u -s "@<sec>"`. Production images strip /dev/mem
+# (CONFIG_DEVMEM=n), so the previous devmem-based register-read path is gone.
 #
-# Internal (ASPEED AST2600) RTC: we read registers at 1e781000 (RTC00 offset 0x00:
-# SecCnt 5:0, MinuCnt 13:8, HourCnt 20:16, DayCnt 28:24; RTC04 offset 0x04:
-# MonCnt 3:0, YearCnt 14:8, CentCnt 20:16) and set system time with date -s.
+# Kernel I2C core does not retry on bus busy; we retry the external RTC path a
+# few times before falling back to internal RTC.
+#
+# Internal (ASPEED AST2600) RTC: BusyBox `hwclock -s` against /dev/rtc0
+# empirically times out after ~10s (see Requires: paragraph above for the
+# unresolved why), so we use two hwclock-free paths:
+#   1. If the kernel already set the system clock from this RTC at probe
+#      (sysfs hctosys=1), we are done; just log and return.
+#   2. Otherwise we read /sys/class/rtc/rtc0/since_epoch and apply with
+#      `date -u -s "@<epoch>"`. This uses the same kernel ioctl path as
+#      hwclock would for the read itself, just without hwclock's tick-wait
+#      synchronization that is what's actually timing out.
 #
 
-AST2600_RTC_BASE=0x1e781000
 I2C_BUS=9
 RTC_EXT_RETRIES=3
 RTC_EXT_RETRY_DELAY=2
@@ -32,15 +56,35 @@ BIND_RTC_RETRY_DELAY=1
 # Retries for GPIO / boot reason when run early (MTD or gpiochip may not be ready)
 RTC_READINESS_RETRIES=5
 RTC_READINESS_DELAY=2
+# Retries waiting for /dev/rtc0 (rtc-aspeed driver may not have probed yet)
+INTERNAL_RTC_RETRIES=5
+INTERNAL_RTC_DELAY=2
 I2C_ADDR=0x6f
 VENDOR_REG=0x10
+# Supported external RTC chips at I2C_ADDR. Format: "<vendor_id> <driver_name>".
+# vendor_id is the byte read from VENDOR_REG (0x10) and must be lowercase to match
+# i2ctransfer's output. driver_name is the kernel module / i2c-dev id used by the
+# new_device sysfs entry.
+RTC_CANDIDATES="0x5c nct3018y
+0x4e pcf85053a"
 I2C_DEV_PATH="/sys/class/i2c-dev/i2c-${I2C_BUS}/device"
 RTC_DEVICE=""
 RTC_DEV=""
 
-log() { echo "rtc-sync: $*" >&2; }
+# Write directly to /dev/kmsg with `>>` to avoid stdio buffering through the
+# init-wrapper's `> /dev/kmsg 2>&1` redirect. BusyBox ash's `echo` uses stdio,
+# which fully-buffers when stdout points at a non-tty char device; messages
+# only flush on subsequent forks or clean exit, so any log that runs late and
+# isn't followed by another fork can be lost if the shell exits abnormally.
+# Falls back to fd 2 if /dev/kmsg isn't writable (e.g. running standalone for
+# debugging outside initramfs).
+log() {
+    if ! printf 'rtc-sync: %s\n' "$*" >>/dev/kmsg 2>/dev/null; then
+        printf 'rtc-sync: %s\n' "$*" >&2
+    fi
+}
 
-BRD0_POWER_GPIO_NAME="BRD0_RUN_POWER_PG-I"
+BRD0_POWER_GPIO_NAME="BRD0_MODULE_PWR_GOOD-I"
 
 # Find MTD partition by name (e.g. u-boot-env). Requires /sys mounted.
 findmtd() {
@@ -122,7 +166,7 @@ should_try_external_rtc() {
 }
 
 detect_rtc_device() {
-    local dev_id
+    local dev_id cand_id cand_drv expected oldifs
     log "Probing I2C bus ${I2C_BUS} at address ${I2C_ADDR}..."
     if ! command -v i2ctransfer >/dev/null 2>&1; then
         log "ERROR - i2ctransfer not available"
@@ -133,12 +177,31 @@ detect_rtc_device() {
         log "ERROR - Failed to read device ID from I2C ${I2C_BUS} at ${I2C_ADDR}"
         return 1
     fi
-    log "Device ID: ${dev_id}"
-    if [ "$dev_id" = "0x5c" ]; then
-        RTC_DEVICE="nct3018y"
+    log "Vendor ID at reg ${VENDOR_REG}: ${dev_id}"
+    # Walk candidates table (newline-separated "<id> <driver>" rows). First match wins.
+    # Splitting on newline with IFS keeps the for loop in this shell so RTC_DEVICE persists.
+    RTC_DEVICE=""
+    expected=""
+    oldifs="$IFS"
+    IFS='
+'
+    for row in $RTC_CANDIDATES; do
+        IFS="$oldifs"
+        cand_id=$(echo "$row" | awk '{print $1}')
+        cand_drv=$(echo "$row" | awk '{print $2}')
+        [ -z "$cand_id" ] && continue
+        expected="${expected}${cand_id} "
+        if [ "$dev_id" = "$cand_id" ]; then
+            RTC_DEVICE="$cand_drv"
+            break
+        fi
+    done
+    IFS="$oldifs"
+    if [ -n "$RTC_DEVICE" ]; then
+        log "Matched external RTC: ${RTC_DEVICE} (vendor ${dev_id})"
         return 0
     fi
-    log "ERROR - Expected NCT3018Y (0x5c), got ${dev_id}"
+    log "ERROR - Unrecognized RTC vendor ID ${dev_id} (expected one of: ${expected})"
     return 1
 }
 
@@ -168,24 +231,50 @@ bind_rtc_driver() {
 }
 
 sync_system_clock() {
+    local sysfs_date sysfs_time sysfs_epoch
     if [ -z "$RTC_DEV" ]; then
         log "ERROR - RTC device not set"
         return 1
     fi
-    if ! hwclock -s -f "/dev/${RTC_DEV}" 2>/dev/null; then
-        log "ERROR - Failed to set system clock from /dev/${RTC_DEV}"
+    # Log sysfs view of the freshly-bound external RTC for breadcrumb.
+    if [ -d "/sys/class/rtc/${RTC_DEV}" ]; then
+        sysfs_date=$(cat "/sys/class/rtc/${RTC_DEV}/date" 2>/dev/null || echo '<unreadable>')
+        sysfs_time=$(cat "/sys/class/rtc/${RTC_DEV}/time" 2>/dev/null || echo '<unreadable>')
+        sysfs_epoch=$(cat "/sys/class/rtc/${RTC_DEV}/since_epoch" 2>/dev/null || echo '<unreadable>')
+        log "  ${RTC_DEV} sysfs reads: ${sysfs_date} ${sysfs_time} (since_epoch=${sysfs_epoch})"
+    else
+        log "  /sys/class/rtc/${RTC_DEV} missing"
         return 1
     fi
-    log "System clock set from RTC: $(date 2>/dev/null || true)"
+    # Apply via sysfs+date instead of hwclock -s (which empirically times out
+    # on /dev/rtc0 - see header). Use the same hwclock-free path uniformly so
+    # external (nct3018y/pcf85053a) behaviour matches internal.
+    if ! set_system_time_from_sysfs "$RTC_DEV"; then
+        log "ERROR - failed to set system clock from external RTC ${RTC_DEV}"
+        return 1
+    fi
+    log "System clock set from external RTC ${RTC_DEV} (epoch applied)"
+    log "calling sync_aspeed_rtc (write-back to /dev/rtc0)"
     sync_aspeed_rtc
+    log "sync_aspeed_rtc returned, sync_system_clock done"
     return 0
 }
 
 sync_aspeed_rtc() {
+    local hw_out hw_ret
     if [ ! -c /dev/rtc0 ]; then
+        log "  sync_aspeed_rtc: /dev/rtc0 not present, skipping write-back to internal RTC"
         return 0
     fi
-    hwclock -w -f /dev/rtc0 2>/dev/null || true
+    hw_out=$(hwclock -w -f /dev/rtc0 2>&1)
+    hw_ret=$?
+    if [ "$hw_ret" -eq 0 ]; then
+        log "  sync_aspeed_rtc: wrote system time back to /dev/rtc0"
+    else
+        log "  sync_aspeed_rtc: hwclock -w failed (exit ${hw_ret}): ${hw_out}"
+        log_internal_rtc_state "sync_aspeed_rtc failure"
+    fi
+    return 0
 }
 
 unbind_rtc_driver() {
@@ -201,44 +290,113 @@ unbind_rtc_driver() {
     return 0
 }
 
-# Read AST2600 RTC counter registers (binary, per datasheet) and set system clock.
-read_internal_rtc() {
-    local reg00 reg04 sec min hour mday mon year cent full_year datestr
+# Dump diagnostic state about the internal RTC for debugging hwclock failures.
+# Output goes to the rtc-sync log (init-wrapper redirects rtc-sync.sh to
+# /dev/kmsg, so this also lands in dmesg). Sysfs RTC reads use the same kernel
+# code path as hwclock, so they're useful as a cross-check: if sysfs shows a
+# valid time but hwclock fails, the bug is likely in user-space (busybox/util-
+# linux hwclock); if sysfs fails too, the kernel driver itself is the culprit.
+log_internal_rtc_state() {
+    local prefix="${1:-rtc state}"
+    log "  ${prefix}: /sys/class/rtc entries: $(ls /sys/class/rtc/ 2>/dev/null | tr '\n' ' ')"
+    if [ -d /sys/class/rtc/rtc0 ]; then
+        log "  ${prefix}: rtc0 name: $(cat /sys/class/rtc/rtc0/name 2>/dev/null || echo '<unreadable>')"
+        log "  ${prefix}: rtc0 hctosys: $(cat /sys/class/rtc/rtc0/hctosys 2>/dev/null || echo '<unreadable>')"
+        log "  ${prefix}: rtc0 since_epoch: $(cat /sys/class/rtc/rtc0/since_epoch 2>/dev/null || echo '<unreadable>')"
+        log "  ${prefix}: rtc0 date+time (sysfs): $(cat /sys/class/rtc/rtc0/date 2>/dev/null || echo '<unreadable>') $(cat /sys/class/rtc/rtc0/time 2>/dev/null || echo '<unreadable>')"
+    fi
+    # Single line; tr collapses ls's multi-line output so it stays one log entry.
+    log "  ${prefix}: /dev/rtc* nodes: $(ls -la /dev/rtc* 2>&1 | tr '\n' '|')"
+}
 
-    if ! command -v devmem >/dev/null 2>&1; then
-        log "ERROR - devmem not available for internal RTC read"
+# Apply system clock from the kernel's view of an RTC by reading sysfs
+# /sys/class/rtc/${rtc_name}/since_epoch and calling `date -u -s "@<sec>"`.
+# Used in place of `hwclock -s -f /dev/<rtc_name>` because BusyBox hwclock's
+# -s synchronises to a RTC tick via select() and empirically times out after
+# ~10s on /dev/rtc0 (see header for details). The sysfs read uses the same
+# kernel ioctl as hwclock would for the actual read, just without the tick
+# wait that is what's actually failing.
+#
+# Returns 0 on success, 1 on read or apply failure.
+set_system_time_from_sysfs() {
+    local rtc_name="$1" epoch
+    if [ ! -d "/sys/class/rtc/${rtc_name}" ]; then
+        log "  /sys/class/rtc/${rtc_name} missing"
         return 1
     fi
-    if ! command -v date >/dev/null 2>&1; then
-        log "ERROR - date not available for setting system clock"
+    epoch=$(cat "/sys/class/rtc/${rtc_name}/since_epoch" 2>/dev/null)
+    if [ -z "$epoch" ]; then
+        log "  /sys/class/rtc/${rtc_name}/since_epoch unreadable"
         return 1
     fi
-
-    reg00=$(devmem $((AST2600_RTC_BASE + 0x00)) 32 2>/dev/null)
-    reg04=$(devmem $((AST2600_RTC_BASE + 0x04)) 32 2>/dev/null)
-    if [ -z "$reg00" ] || [ -z "$reg04" ]; then
-        log "ERROR - Failed to read ASPEED RTC registers (base ${AST2600_RTC_BASE})"
+    # Reject obviously bogus times (e.g. RTC reads back 1970 because never set).
+    # The kernel itself rejects similarly: on invalid reads it returns -EINVAL
+    # and refuses to set hctosys, but a freshly-cold RTC can still read 0.
+    if [ "$epoch" -lt 1700000000 ] 2>/dev/null; then
+        log "  /sys/class/rtc/${rtc_name}/since_epoch=${epoch} predates Nov 2023; refusing to set system time backward"
         return 1
     fi
-
-    # RTC00: SecCnt 5:0, MinuCnt 13:8, HourCnt 20:16, DayCnt 28:24 (binary)
-    sec=$((reg00 & 0x3f))
-    min=$(((reg00 >> 8) & 0x3f))
-    hour=$(((reg00 >> 16) & 0x1f))
-    mday=$(((reg00 >> 24) & 0x1f))
-    # RTC04: MonCnt 3:0 (1-12), YearCnt 14:8 (0-99), CentCnt 20:16 (0-31)
-    mon=$((reg04 & 0x0f))
-    year=$(((reg04 >> 8) & 0x7f))
-    cent=$(((reg04 >> 16) & 0x1f))
-    full_year=$((cent * 100 + year))
-
-    datestr=$(printf "%04d-%02d-%02d %02d:%02d:%02d" "$full_year" "$mon" "$mday" "$hour" "$min" "$sec")
-    if ! date -u -s "$datestr" >/dev/null 2>&1; then
-        log "ERROR - Failed to set system clock from ASPEED RTC: date -u -s \"$datestr\" failed"
+    if ! date -u -s "@${epoch}" >/dev/null 2>&1; then
+        log "  date -u -s \"@${epoch}\" failed"
         return 1
     fi
-    log "System clock set from internal RTC (regs): $datestr"
+    log "  date -u -s \"@${epoch}\" applied (rtc=${rtc_name})"
     return 0
+}
+
+# Sync system clock from the AST2600 internal RTC. Two paths:
+#   1. If sysfs hctosys=1, the kernel already set system time at probe and we
+#      have nothing to do - just confirm and return.
+#   2. Otherwise apply via set_system_time_from_sysfs (see helper above for why
+#      we avoid hwclock -s).
+#
+# /dev/rtc0 may not exist yet very early in initramfs because the aspeed-rtc
+# driver probes ~2.6s after kernel boot; we retry briefly for it to appear.
+#
+# Note: production builds disable /dev/mem (CONFIG_DEVMEM=n) so we cannot
+# fall back to reading the RTC registers via devmem. If neither hctosys nor
+# sysfs+date works within the retry budget, we return failure and let NTP
+# correct the time later.
+read_internal_rtc() {
+    local attempt=1 rtc_dev=/dev/rtc0 hctosys sysfs_date sysfs_time sysfs_epoch
+
+    while [ "$attempt" -le "$INTERNAL_RTC_RETRIES" ]; do
+        log "Internal RTC attempt ${attempt}/${INTERNAL_RTC_RETRIES}: probing ${rtc_dev}"
+
+        if [ ! -c "$rtc_dev" ]; then
+            log "  ${rtc_dev} not present yet (rtc-aspeed driver may not have probed)"
+            log_internal_rtc_state "attempt ${attempt}"
+        else
+            # Sysfs read for log breadcrumb (also informs the hctosys check below).
+            sysfs_date=$(cat /sys/class/rtc/rtc0/date 2>/dev/null || echo '<unreadable>')
+            sysfs_time=$(cat /sys/class/rtc/rtc0/time 2>/dev/null || echo '<unreadable>')
+            sysfs_epoch=$(cat /sys/class/rtc/rtc0/since_epoch 2>/dev/null || echo '<unreadable>')
+            hctosys=$(cat /sys/class/rtc/rtc0/hctosys 2>/dev/null || echo '<unreadable>')
+            log "  rtc0 sysfs reads: ${sysfs_date} ${sysfs_time} (since_epoch=${sysfs_epoch}, hctosys=${hctosys})"
+
+            # Path 1: kernel already did it for us at rtc-aspeed probe.
+            if [ "$hctosys" = "1" ]; then
+                log "System clock already set by kernel at rtc-aspeed probe (hctosys=1); current: $(date 2>/dev/null || true)"
+                return 0
+            fi
+
+            # Path 2: apply via sysfs+date (avoids hwclock UIE timeout).
+            if set_system_time_from_sysfs rtc0; then
+                log "System clock set from internal RTC sysfs: $(date 2>/dev/null || true)"
+                return 0
+            fi
+            log_internal_rtc_state "attempt ${attempt} after sysfs apply failure"
+        fi
+
+        if [ "$attempt" -lt "$INTERNAL_RTC_RETRIES" ]; then
+            sleep "$INTERNAL_RTC_DELAY"
+        fi
+        attempt=$((attempt + 1))
+    done
+
+    log "ERROR - Failed to set system clock from internal RTC after ${INTERNAL_RTC_RETRIES} attempts"
+    log_internal_rtc_state "final"
+    return 1
 }
 
 try_external_rtc() {
@@ -268,16 +426,16 @@ try_external_rtc() {
 }
 
 main() {
+    # We sync the system clock via sysfs+date rather than hwclock -s, which
+    # empirically times out after ~10s on /dev/rtc0 (see header). hwclock is
+    # now only used by sync_aspeed_rtc for the best-effort write-back to
+    # /dev/rtc0 after a successful external RTC sync; absence is logged there.
+    if ! command -v date >/dev/null 2>&1; then
+        log "ERROR - date not available; cannot apply RTC time to system clock"
+        return 1
+    fi
+
     if should_try_external_rtc; then
-        if ! command -v hwclock >/dev/null 2>&1; then
-            log "hwclock not available, using internal RTC only"
-            if read_internal_rtc; then
-                log "Complete (internal RTC)"
-                return 0
-            fi
-            log "RTC sync failed - system time may be wrong"
-            return 1
-        fi
         log "Trying external RTC first (up to ${RTC_EXT_RETRIES} attempts)"
         attempt=1
         while [ "$attempt" -le "$RTC_EXT_RETRIES" ]; do
