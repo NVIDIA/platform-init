@@ -171,6 +171,32 @@ int init_vr_nvl_bmc()
     std::cerr << std::format("vr-nvl-bmc: B1_M0 module {} detected\n",
                              b1_present ? "" : "NOT");
 
+    // Source: hmc_bypass() in bmc_ready.sh
+    hmc_mux_select();
+
+    // Source: bind_gpio_expanders() in bmc_ready.sh
+    // 1-0020, 1-0021: HMC bypass expanders
+    iox_bind(1, 0x20);
+    iox_bind(1, 0x21);
+    // 2-0020 … 2-0024: B0_M0 MGMT board expanders
+    // Bind before waiting: after an aux cycle the BMC kernel restarts fresh
+    // and the device tree does not auto-probe these expanders, so iox_wait
+    // alone would always time out.
+    iox_bind(2, 0x20);
+    iox_bind(2, 0x21);
+    iox_bind(2, 0x22);
+    iox_bind(2, 0x23);
+    iox_bind(2, 0x24);
+    // 7-0020 … 7-0024: B1_M0 MGMT board expanders
+    if (b1_present)
+    {
+        iox_bind(7, 0x20);
+        iox_bind(7, 0x21);
+        iox_bind(7, 0x22);
+        iox_bind(7, 0x23);
+        iox_bind(7, 0x24);
+    }
+
     // Source: check_iox_2_20_present() in bmc_ready.sh, exit 1 on failure
     std::cerr << "vr-nvl-bmc: waiting for IOX 2-0020\n";
     if (!iox_wait(2, 0x20, std::chrono::seconds{30}))
@@ -179,7 +205,6 @@ int init_vr_nvl_bmc()
         return EXIT_FAILURE;
     }
 
-    // Skipped when B1_M0 is not detected (single-module topology).
     // Source: check_iox_7_20_present() in bmc_ready.sh, exit 1 on failure
     if (b1_present)
     {
@@ -194,26 +219,6 @@ int init_vr_nvl_bmc()
     {
         std::cerr << "vr-nvl-bmc: B1_M0 not present — skipping IOX 7-0020 wait\n";
     }
-
-    // Source: hmc_bypass() in bmc_ready.sh
-    hmc_mux_select();
-
-    // Source: bind_gpio_expanders() in bmc_ready.sh
-    // 1-0020, 1-0021: HMC bypass expanders
-    iox_bind(1, 0x20);
-    iox_bind(1, 0x21);
-    // 2-0020 … 2-0024: B0_M0 MGMT board expanders
-    iox_bind(2, 0x20);
-    iox_bind(2, 0x21);
-    iox_bind(2, 0x22);
-    iox_bind(2, 0x23);
-    iox_bind(2, 0x24);
-    // 7-0020 … 7-0024: B1_M0 MGMT board expanders
-    iox_bind(7, 0x20);
-    iox_bind(7, 0x21);
-    iox_bind(7, 0x22);
-    iox_bind(7, 0x23);
-    iox_bind(7, 0x24);
 
     // Source: `set_gpio_level "USB_MUX_EN-O" $HIGH` in bmc_ready.sh
     gpio::set("USB_MUX_EN-O", 1);
