@@ -10,15 +10,24 @@ gpiodcxx_dep = dependency('libgpiodcxx', default_options: ['bindings=cxx'])
 systemd_dep = dependency('systemd')
 libsystemd_dep = dependency('libsystemd')
 sdbusplus = dependency('sdbusplus', include_type: 'system')
-
-
 cli11_dep = dependency('CLI11', required: true, include_type: 'system')
 i2c_dep = meson.get_compiler('cpp').find_library('i2c')
 
-platform_srcs = files('nvidia/gb200.cpp', 'nvidia/nvl32.cpp')
 util_srcs = files('gpio.cpp', 'i2c.cpp', 'utilities.cpp')
 
-exe = executable(
+platform_srcs = files(
+    'nvidia/gb200.cpp',
+    'nvidia/nvl32.cpp',
+    'nvidia/vr_c2_bmc.cpp',
+    'nvidia/vr_e5010_bmc.cpp',
+    'nvidia/vr_nvl_bmc.cpp',
+    'nvidia/vr_nvl_bmc_ast2700.cpp',
+    'nvidia/vr_nvl_hmc.cpp',
+    'nvidia/vr_nvl_hmc_ast2700.cpp',
+    'nvidia/vr_quark_bmc.cpp',
+)
+
+executable(
     'platform',
     ['platform.cpp'] + platform_srcs + util_srcs,
     dependencies: [gpiodcxx_dep, libsystemd_dep, cli11_dep, i2c_dep, sdbusplus],
@@ -27,15 +36,17 @@ exe = executable(
     install_dir: get_option('libexecdir'),
 )
 
+platform_name = get_option('platform-name')
+
 systemd_system_unit_dir = systemd_dep.get_variable('systemd_system_unit_dir')
 configure_file(
     input: 'platform_init.service.in',
     output: 'platform_init.service',
     install_dir: systemd_system_unit_dir,
     install: true,
-    configuration: configuration_data(
-        {'PLATFORM_NAME': get_option('platform-name')},
-    ),
+    configuration: configuration_data({'PLATFORM_NAME': platform_name}),
 )
+
+script_base = 'nvidia/scripts/platforms'
 
 subdir('emmc-manager')
