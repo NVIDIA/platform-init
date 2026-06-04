@@ -4,3 +4,10 @@ option(
     value: 'nvidia-gb200',
     description: 'Platform to init (Temporary)',
 )
+
+option(
+    'tests',
+    type: 'feature',
+    value: 'auto',
+    description: 'Build unit tests (gated on gtest availability).',
+)

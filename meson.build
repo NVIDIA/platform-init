@@ -37,3 +37,5 @@ configure_file(
         {'PLATFORM_NAME': get_option('platform-name')},
     ),
 )
+
+subdir('emmc-manager')

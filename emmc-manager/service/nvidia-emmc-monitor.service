@@ -1,0 +1,11 @@
+[Unit]
+Description=NVIDIA eMMC Monitor (AST2700 RWFS)
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/nvidia-emmc-monitor
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
