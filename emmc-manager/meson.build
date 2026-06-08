@@ -19,10 +19,10 @@ ss_dep             = cpp.find_library('ss', required: true)       # libss
 libubootenv_dep    = dependency('libubootenv', required: true)
 libsystemd_dep     = dependency('libsystemd', required: true)
 
-# nvidia-emmc-init only — libgpiod for EMMC_RST_L-O toggle.
-# Pinned to the v1.x C++ API surface (gpiod::find_line, line.request()).
+# nvidia-emmc-init only — libgpiod (C API) for EMMC_RST_L-O toggle.
+# Pinned to the v1.x C API surface (gpiod_line_find / gpiod_line_request_output).
 # libgpiod v2.x is a breaking rewrite; we will not silently adopt it.
-gpiod_dep          = dependency('libgpiodcxx',
+gpiod_dep          = dependency('libgpiod',
                                 version: ['>=1.0', '<2.0'],
                                 required: true)
 
