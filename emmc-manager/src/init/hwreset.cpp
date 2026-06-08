@@ -5,15 +5,17 @@
 #include "emmc-init.h"
 #include "emmc-ioctl.h"
 
+#include <gpiod.h>
+
+#include <array>
+#include <cerrno>
 #include <chrono>
+#include <cstdint>
+#include <cstring>
 #include <format>
 #include <iostream>
 #include <string_view>
 #include <thread>
-
-#include <array>
-#include <cstdint>
-#include <gpiod.hpp>
 
 namespace emmc::init
 {
@@ -28,18 +30,21 @@ constexpr std::array<const char*, 2> kEmmcResetGpioNames = {
     "EMMC_RST-O",
 };
 
-gpiod::line findResetLine(const char*& found_name)
+// gpiod_line_find returns a borrowed pointer to a line whose owning chip
+// has been opened as a side effect; callers must close that chip via
+// gpiod_chip_close(gpiod_line_get_chip(line)) to release the handle.
+gpiod_line* findResetLine(const char*& found_name)
 {
     for (const char* name : kEmmcResetGpioNames)
     {
-        gpiod::line line = gpiod::find_line(name);
-        if (line)
+        gpiod_line* line = gpiod_line_find(name);
+        if (line != nullptr)
         {
             found_name = name;
             return line;
         }
     }
-    return {};
+    return nullptr;
 }
 
 } // namespace
@@ -118,37 +123,53 @@ bool ensureHwResetEnabled(std::string_view device)
 bool pulseHwResetGpio()
 {
     using namespace std::chrono_literals;
-    try
+    const char* found_name = nullptr;
+    gpiod_line* line = findResetLine(found_name);
+    if (line == nullptr)
     {
-        const char* found_name = nullptr;
-        gpiod::line line = findResetLine(found_name);
-        if (!line)
+        std::cerr << "hwreset: GPIO line not found (tried";
+        for (const char* name : kEmmcResetGpioNames)
         {
-            std::cerr << "hwreset: GPIO line not found (tried";
-            for (const char* name : kEmmcResetGpioNames)
-            {
-                std::cerr << ' ' << name;
-            }
-            std::cerr << ")\n";
-            return false;
+            std::cerr << ' ' << name;
         }
-        line.request({"nvidia-emmc-init",
-                      gpiod::line_request::DIRECTION_OUTPUT, 0},
-                     0);
+        std::cerr << ")\n";
+        return false;
+    }
+    gpiod_chip* chip = gpiod_line_get_chip(line);
+    bool ok = true;
+    if (gpiod_line_request_output(line, "nvidia-emmc-init", 0) < 0)
+    {
+        std::cerr << std::format(
+            "hwreset: gpiod_line_request_output({}) failed: {}\n", found_name,
+            std::strerror(errno));
+        ok = false;
+    }
+    else
+    {
         std::this_thread::sleep_for(100ms);
-        line.set_value(1);
-        std::this_thread::sleep_for(100ms);
-        line.release();
+        if (gpiod_line_set_value(line, 1) < 0)
+        {
+            std::cerr << std::format(
+                "hwreset: gpiod_line_set_value({}, 1) failed: {}\n",
+                found_name, std::strerror(errno));
+            ok = false;
+        }
+        else
+        {
+            std::this_thread::sleep_for(100ms);
+        }
+        gpiod_line_release(line);
+    }
+    if (chip != nullptr)
+    {
+        gpiod_chip_close(chip);
+    }
+    if (ok)
+    {
         std::cerr << std::format("hwreset: toggled GPIO line {}\n",
                                  found_name);
     }
-    catch (const std::exception& e)
-    {
-        std::cerr << std::format("hwreset: GPIO toggle failed: {}\n",
-                                 e.what());
-        return false;
-    }
-    return true;
+    return ok;
 }
 
 } // namespace emmc::init
