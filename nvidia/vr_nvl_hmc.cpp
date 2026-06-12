@@ -192,6 +192,14 @@ int init_vr_nvl_hmc()
 
     gpio_check(gpio_checks);
 
+    // Source: set_hmc_ready() in hmc_ready.sh
+    // HMC_READY-O (GPIO M3) is claimed by the gpio-leds driver; libgpiod
+    // cannot claim it — drive via LED sysfs instead.
+    if (std::ofstream f{"/sys/class/leds/hmc_ready_noled/brightness"}; f)
+        f << "1\n";
+    else
+        std::cerr << "vr-nvl-hmc: WARNING: failed to assert HMC_READY-O\n";
+
     sd_notify(0, "READY=1");
     std::cerr << "vr-nvl-hmc: platform init complete\n";
 
