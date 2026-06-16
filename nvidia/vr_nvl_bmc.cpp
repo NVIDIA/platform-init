@@ -125,42 +125,45 @@ int init_vr_nvl_bmc()
     gpio::set("PDB_12V_EN_N_R-O", 1);
     std::this_thread::sleep_for(std::chrono::seconds{1});
 
-    gpio::Event stby_pg("STBY_POWER_PG-I", 1);
-
-    // Source: `if [ -d .../9-0020 ]; then set_gpio_level "STBY_POWER_EN-O" $HIGH`
-    //         in bmc_ready.sh
-    if (iox_present(9, 0x20))
     {
-        std::cerr << "vr-nvl-bmc: PDB IOX 9-0020 present — asserting STBY_POWER_EN-O\n";
-        gpio::set("STBY_POWER_EN-O", 1);
-    }
+        gpio::Event stby_pg("STBY_POWER_PG-I", 1);
 
-    // Source: wait_standby_pwr "BMC" in bmc_ready.sh
-    std::cerr << "vr-nvl-bmc: waiting for STBY_POWER_PG-I\n";
-    if (stby_pg.wait() != gpio::EventResult::Asserted)
-    {
-        std::cerr << "vr-nvl-bmc: FATAL: STBY_POWER_PG-I timeout\n";
-        return EXIT_FAILURE;
-    }
+        // Source: `if [ -d .../9-0020 ]; then set_gpio_level "STBY_POWER_EN-O" $HIGH`
+        //         in bmc_ready.sh
+        if (iox_present(9, 0x20))
+        {
+            std::cerr << "vr-nvl-bmc: PDB IOX 9-0020 present — asserting STBY_POWER_EN-O\n";
+            gpio::set("STBY_POWER_EN-O", 1);
+        }
+
+        // Source: wait_standby_pwr "BMC" in bmc_ready.sh
+        std::cerr << "vr-nvl-bmc: waiting for STBY_POWER_PG-I\n";
+        if (stby_pg.wait() != gpio::EventResult::Asserted)
+        {
+            std::cerr << "vr-nvl-bmc: FATAL: STBY_POWER_PG-I timeout\n";
+            return EXIT_FAILURE;
+        }
+    } // releases STBY_POWER_PG-I so x86-power-control can claim it
 
     // Source: `set_gpio_level "HMC_RST_R_L-O" $HIGH` in bmc_ready.sh
     gpio::set("HMC_RST_R_L-O", 1);
-
-    gpio::Event pdb_pg("STBY_PWR_OK-I", 1);
-
-    // Source: `set_gpio_level "PDB_12V_EN_N_R-O" $LOW` in bmc_ready.sh
-    gpio::set("PDB_12V_EN_N_R-O", 0);
-
-    // Source: `if [ -d .../9-0020 ]; then wait_standby_pwr "PDB"` in bmc_ready.sh
-    if (iox_present(9, 0x20))
     {
-        std::cerr << "vr-nvl-bmc: waiting for PDB STBY_PWR_OK-I\n";
-        if (pdb_pg.wait() != gpio::EventResult::Asserted)
+        gpio::Event pdb_pg("STBY_PWR_OK-I", 1);
+
+        // Source: `set_gpio_level "PDB_12V_EN_N_R-O" $LOW` in bmc_ready.sh
+        gpio::set("PDB_12V_EN_N_R-O", 0);
+
+        // Source: `if [ -d .../9-0020 ]; then wait_standby_pwr "PDB"` in bmc_ready.sh
+        if (iox_present(9, 0x20))
         {
-            std::cerr << "vr-nvl-bmc: FATAL: STBY_PWR_OK-I (PDB standby) timeout\n";
-            return EXIT_FAILURE;
+            std::cerr << "vr-nvl-bmc: waiting for PDB STBY_PWR_OK-I\n";
+            if (pdb_pg.wait() != gpio::EventResult::Asserted)
+            {
+                std::cerr << "vr-nvl-bmc: FATAL: STBY_PWR_OK-I (PDB standby) timeout\n";
+                return EXIT_FAILURE;
+            }
         }
-    }
+    } // releases STBY_PWR_OK-I
 
     // MOD1_B2B_CABLE_PRESENT_L-I and MOD1_CLINK_CABLE_PRESENT_L-I are on
     // PDB IOX (9-0020, now bound). Both are active-low: 0 = cable present.
