@@ -55,6 +55,7 @@ int init_vr_c2_bmc()
         gpio::set("HMC_RESET_L-O",   0);
     }
 
+    {
     gpio::Event stby_pg("STBY_POWER_PG-I", 1);
 
     // Source: PDB IOX bind block in bmc_ready.sh (main, C2 specific)
@@ -66,6 +67,7 @@ int init_vr_c2_bmc()
     {
         std::cerr << "vr-c2-bmc: FATAL: STBY_POWER_PG-I timeout\n";
         return EXIT_FAILURE;
+    }
     }
 
     // Source: check_iox_2_20_present() in bmc_ready.sh, exit 1 on failure

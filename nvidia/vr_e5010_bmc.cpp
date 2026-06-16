@@ -80,15 +80,17 @@ int init_vr_e5010_bmc()
         gpio::set("HMC_RESET_L-O",   0);
     }
 
-    gpio::Event stby_pg("STBY_POWER_PG-I", 1);
-
-    // Source: wait_standby_pwr_p4103() in bmc_ready.sh
-    std::cerr << "vr-e5010-bmc: waiting for STBY_POWER_PG-I\n";
-    if (stby_pg.wait() != gpio::EventResult::Asserted)
     {
-        std::cerr << "vr-e5010-bmc: FATAL: STBY_POWER_PG-I timeout\n";
-        return EXIT_FAILURE;
-    }
+        gpio::Event stby_pg("STBY_POWER_PG-I", 1);
+
+        // Source: wait_standby_pwr_p4103() in bmc_ready.sh
+        std::cerr << "vr-e5010-bmc: waiting for STBY_POWER_PG-I\n";
+        if (stby_pg.wait() != gpio::EventResult::Asserted)
+        {
+            std::cerr << "vr-e5010-bmc: FATAL: STBY_POWER_PG-I timeout\n";
+            return EXIT_FAILURE;
+        }
+    } // releases STBY_POWER_PG-I so x86-power-control can claim it
 
     // Source: check_iox_2_20_present() in bmc_ready.sh, exit 1 on failure
     std::cerr << "vr-e5010-bmc: waiting for IOX 2-0020\n";

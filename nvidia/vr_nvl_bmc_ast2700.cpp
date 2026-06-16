@@ -98,40 +98,44 @@ int init_vr_nvl_bmc_ast2700()
     gpio::set("PDB_12V_EN_N_R-O", 1);
     std::this_thread::sleep_for(std::chrono::seconds{1});
 
-    gpio::Event stby_pg("STBY_POWER_PG-I", 1);
-
-    // Source: `if [ -d .../0-0020 ]; then set_gpio_level "STBY_POWER_EN-O" $HIGH`
-    if (iox_present(0, 0x20))
     {
-        std::cerr << "vr-nvl-bmc-ast2700: PDB IOX 0-0020 present — asserting STBY_POWER_EN-O\n";
-        gpio::set("STBY_POWER_EN-O", 1);
-    }
+        gpio::Event stby_pg("STBY_POWER_PG-I", 1);
 
-    // Source: wait_standby_pwr "BMC" in bmc_ready.sh
-    std::cerr << "vr-nvl-bmc-ast2700: waiting for STBY_POWER_PG-I\n";
-    if (stby_pg.wait() != gpio::EventResult::Asserted)
-    {
-        std::cerr << "vr-nvl-bmc-ast2700: FATAL: STBY_POWER_PG-I timeout\n";
-        return EXIT_FAILURE;
-    }
-
-    // NOTE: AST2700 PDB standby is PWBY_PWR_OK-I (was STBY_PWR_OK-I on AST2600)
-    gpio::Event pdb_pg("PWBY_PWR_OK-I", 1);
-
-    // Source: `set_gpio_level "PDB_12V_EN_N_R-O" $LOW` in bmc_ready.sh
-    // NOTE: HMC_RST_R_L release is intentionally omitted — commented out in bmc_ready.sh
-    gpio::set("PDB_12V_EN_N_R-O", 0);
-
-    // Source: `if [ -d .../0-0020 ]; then wait_standby_pwr "PDB"` in bmc_ready.sh
-    if (iox_present(0, 0x20))
-    {
-        std::cerr << "vr-nvl-bmc-ast2700: waiting for PDB PWBY_PWR_OK-I\n";
-        if (pdb_pg.wait() != gpio::EventResult::Asserted)
+        // Source: `if [ -d .../0-0020 ]; then set_gpio_level "STBY_POWER_EN-O" $HIGH`
+        if (iox_present(0, 0x20))
         {
-            std::cerr << "vr-nvl-bmc-ast2700: FATAL: PWBY_PWR_OK-I (PDB standby) timeout\n";
+            std::cerr << "vr-nvl-bmc-ast2700: PDB IOX 0-0020 present — asserting STBY_POWER_EN-O\n";
+            gpio::set("STBY_POWER_EN-O", 1);
+        }
+
+        // Source: wait_standby_pwr "BMC" in bmc_ready.sh
+        std::cerr << "vr-nvl-bmc-ast2700: waiting for STBY_POWER_PG-I\n";
+        if (stby_pg.wait() != gpio::EventResult::Asserted)
+        {
+            std::cerr << "vr-nvl-bmc-ast2700: FATAL: STBY_POWER_PG-I timeout\n";
             return EXIT_FAILURE;
         }
-    }
+    } // releases STBY_POWER_PG-I so x86-power-control can claim it
+
+    {
+        // NOTE: AST2700 PDB standby is PWBY_PWR_OK-I (was STBY_PWR_OK-I on AST2600)
+        gpio::Event pdb_pg("PWBY_PWR_OK-I", 1);
+
+        // Source: `set_gpio_level "PDB_12V_EN_N_R-O" $LOW` in bmc_ready.sh
+        // NOTE: HMC_RST_R_L release is intentionally omitted — commented out in bmc_ready.sh
+        gpio::set("PDB_12V_EN_N_R-O", 0);
+
+        // Source: `if [ -d .../0-0020 ]; then wait_standby_pwr "PDB"` in bmc_ready.sh
+        if (iox_present(0, 0x20))
+        {
+            std::cerr << "vr-nvl-bmc-ast2700: waiting for PDB PWBY_PWR_OK-I\n";
+            if (pdb_pg.wait() != gpio::EventResult::Asserted)
+            {
+                std::cerr << "vr-nvl-bmc-ast2700: FATAL: PWBY_PWR_OK-I (PDB standby) timeout\n";
+                return EXIT_FAILURE;
+            }
+        }
+    } // releases PWBY_PWR_OK-I
 
     // Source: check_iox_11_20_present() in bmc_ready.sh; exit 1 on failure
     // AST2700 bus 11 (was bus 2 on AST2600)
