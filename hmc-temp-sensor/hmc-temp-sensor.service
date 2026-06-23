@@ -1,0 +1,11 @@
+[Unit]
+Description=HMC Temperature Sensor — single hwmon→EEPROM update
+Requires=hmc-temp-sensor-init.service
+After=hmc-temp-sensor-init.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/hmc-temp-sensor.conf
+ExecStart=/usr/bin/hmc-temp-sensor --oneshot $BUS
+SyslogIdentifier=hmc-temp-sensor

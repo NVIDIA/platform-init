@@ -1,0 +1,14 @@
+[Unit]
+Description=HMC I2C Boot Progress Telemetry
+After=platform_init.service network.target
+Requires=platform_init.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/i2c-boot-progress.conf
+ExecStart=/usr/bin/i2c-boot-progress $RO_BUS $RW_BUS
+Restart=on-failure
+SyslogIdentifier=i2c-boot-progress
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,13 @@
+[Unit]
+Description=HMC Temperature Sensor — 1 Hz update tick
+Requires=hmc-temp-sensor-init.service
+After=hmc-temp-sensor-init.service
+
+[Timer]
+OnBootSec=1s
+OnUnitActiveSec=1s
+AccuracySec=100ms
+Unit=hmc-temp-sensor.service
+
+[Install]
+WantedBy=timers.target

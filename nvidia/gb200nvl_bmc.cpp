@@ -427,7 +427,7 @@ static void enable_hmc_cpld_pex_signature_checking()
     std::cerr << "gb200nvl-bmc: HMC CPLD PEX signature checking timeout\n";
 }
 
-int init_gb200_nvl_bmc()
+int init_gb200nvl_bmc()
 {
     std::cerr << "gb200nvl-bmc: platform init start\n";
 
