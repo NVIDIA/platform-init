@@ -1,0 +1,14 @@
+[Unit]
+Description=I2C dump server
+After=platform_init.service
+After=create-dump-dbus.service
+
+[Service]
+Restart=no
+RemainAfterExit=true
+Type=simple
+EnvironmentFile=/etc/i2c-dump-server.conf
+ExecStart=/usr/bin/i2c-dump-server $CTRL_BUS $DATA_BUS
+SyslogIdentifier=i2c-dump-server
+
+[Install]

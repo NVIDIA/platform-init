@@ -52,3 +52,13 @@ configure_file(
 script_base = 'nvidia/scripts/platforms'
 
 subdir('emmc-manager')
+
+if platform_name.contains('bmc')
+    subdir('cpu-diag-status')
+endif
+
+if platform_name.contains('vr-nvl-hmc')
+    subdir('i2c-dump-server')
+    subdir('hmc-temp-sensor')
+    subdir('hmc-post-boot-cfg')
+endif
