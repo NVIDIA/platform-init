@@ -17,6 +17,8 @@ util_srcs = files('gpio.cpp', 'i2c.cpp', 'utilities.cpp')
 
 platform_srcs = files(
     'nvidia/gb200.cpp',
+    'nvidia/gb200nvl_bmc.cpp',
+    'nvidia/gb200nvl_hmc.cpp',
     'nvidia/nvl32.cpp',
     'nvidia/vr_c2_bmc.cpp',
     'nvidia/vr_e5010_bmc.cpp',

@@ -18,9 +18,11 @@
 #include <string_view>
 #include <utility>
 
-constexpr std::array<std::pair<std::string_view, int (*)()>, 10> init_functions{{
+constexpr std::array<std::pair<std::string_view, int (*)()>, 12> init_functions{{
     {"nvidia-gb200",                nvidia::init_gb200_base},
     {"nvidia-gb200-with-p2020",     nvidia::init_gb200_with_p2020},
+    {"nvidia-gb200nvl-bmc",         nvidia::init_gb200nvl_bmc},
+    {"nvidia-gb200nvl-hmc",         nvidia::init_gb200nvl_hmc},
     {"nvidia-nvl32",                nvidia::init_nvl32},
     {"nvidia-vr-c2-bmc",           nvidia::init_vr_c2_bmc},
     {"nvidia-vr-nvl-bmc",          nvidia::init_vr_nvl_bmc},
