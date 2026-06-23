@@ -8,6 +8,8 @@ namespace nvidia
 // list your platform initialization callbacks here
 int init_gb200_base();
 int init_gb200_with_p2020();
+int init_gb200nvl_bmc();
+int init_gb200nvl_hmc();
 int init_nvl32();
 
 int init_vr_c2_bmc();
