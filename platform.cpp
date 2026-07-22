@@ -18,20 +18,10 @@
 #include <string_view>
 #include <utility>
 
-constexpr std::array<std::pair<std::string_view, int (*)()>, 12> init_functions{{
-    {"nvidia-gb200",                nvidia::init_gb200_base},
-    {"nvidia-gb200-with-p2020",     nvidia::init_gb200_with_p2020},
-    {"nvidia-gb200nvl-bmc",         nvidia::init_gb200nvl_bmc},
-    {"nvidia-gb200nvl-hmc",         nvidia::init_gb200nvl_hmc},
-    {"nvidia-nvl32",                nvidia::init_nvl32},
-    {"nvidia-vr-c2-bmc",           nvidia::init_vr_c2_bmc},
-    {"nvidia-vr-nvl-bmc",          nvidia::init_vr_nvl_bmc},
-    {"nvidia-vr-nvl-bmc-ast2700",  nvidia::init_vr_nvl_bmc_ast2700},
-    {"nvidia-vr-nvl-hmc",          nvidia::init_vr_nvl_hmc},
-    {"nvidia-vr-nvl-hmc-ast2700",  nvidia::init_vr_nvl_hmc_ast2700},
-    {"nvidia-vr-e5010-bmc",        nvidia::init_vr_e5010_bmc},
-    {"nvidia-vr-quark-bmc",        nvidia::init_vr_quark_bmc},
-}};
+constexpr std::array<std::pair<std::string_view, int (*)()>, 3> init_functions{
+    {{"nvidia-gb200", nvidia::init_gb200_base},
+     {"nvidia-gb200-with-p2020", nvidia::init_gb200_with_p2020},
+     {"nvidia-nvl32", nvidia::init_nvl32}}};
 
 int main(int argc, char** argv)
 {
