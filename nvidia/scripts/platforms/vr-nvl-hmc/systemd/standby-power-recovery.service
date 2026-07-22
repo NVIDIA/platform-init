@@ -1,0 +1,13 @@
+[Unit]
+Description=Standby Power Recovery Service
+ConditionPathExists=/run/standby_power_failure
+Before=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/standby_power_recovery.sh
+
+[Install]
+WantedBy=multi-user.target
+
+

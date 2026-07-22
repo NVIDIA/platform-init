@@ -69,7 +69,7 @@ void new_device(unsigned int bus, unsigned int address,
 {
     std::string path =
         std::format("/sys/bus/i2c/devices/i2c-{}/new_device", bus);
-    std::cerr << std::format("attempting to open {}\n", path);
+    std::cerr << std::format("attempting to open {}", path);
     std::ofstream new_device(path);
     if (!new_device)
     {
@@ -79,7 +79,7 @@ void new_device(unsigned int bus, unsigned int address,
     new_device << std::format("{} 0x{:02x}", device_type, address);
     new_device.close();
 
-    std::cerr << std::format("{} device created at bus {}\n", device_type, bus);
+    std::cerr << std::format("{} device created at bus {}", device_type, bus);
 }
 
 RawDevice::RawDevice(size_t bus, uint8_t address)
@@ -119,24 +119,6 @@ int RawDevice::read_byte(uint8_t reg, uint8_t& val)
 
     val = result;
     return 0;
-}
-
-// Source: i2cset -y <bus> <addr> <reg> <val> b  (SMBus write-byte-data)
-int RawDevice::write_byte(uint8_t reg, uint8_t val)
-{
-    return i2c_smbus_write_byte_data(fd, reg, val) < 0 ? errno : 0;
-}
-
-// Source: i2cset -y <bus> <addr> <reg> <val> w  (SMBus write-word-data)
-int RawDevice::write_word(uint8_t reg, uint16_t val)
-{
-    return i2c_smbus_write_word_data(fd, reg, val) < 0 ? errno : 0;
-}
-
-// SMBus send-byte: single byte to <addr> on <bus>, no register/command code
-int RawDevice::send_byte(uint8_t cmd)
-{
-    return i2c_smbus_write_byte(fd, cmd) < 0 ? errno : 0;
 }
 
 } // namespace i2c
