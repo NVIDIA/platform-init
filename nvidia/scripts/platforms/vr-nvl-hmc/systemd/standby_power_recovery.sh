@@ -46,7 +46,7 @@ check_i2c_device() {
 init_reboot_counter() {
     if [ ! -f "$REBOOT_LOOP_COUNT_FILE" ]; then
         echo "0" > "$REBOOT_LOOP_COUNT_FILE"
-        echo "Created reboot loop counter file"
+        echo "Created reboot loop counter file" >&2
     fi
     cat "$REBOOT_LOOP_COUNT_FILE"
 }
