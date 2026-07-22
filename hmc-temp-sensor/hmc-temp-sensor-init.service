@@ -1,0 +1,14 @@
+[Unit]
+Description=HMC Temperature Sensor — boot init (slave EEPROM device + threshold)
+After=platform_init.service
+Before=hmc-temp-sensor.timer
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/hmc-temp-sensor.conf
+ExecStart=/usr/bin/hmc-temp-sensor --init $BUS
+RemainAfterExit=yes
+SyslogIdentifier=hmc-temp-sensor-init
+
+[Install]
+WantedBy=multi-user.target
