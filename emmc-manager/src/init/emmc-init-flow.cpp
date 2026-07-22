@@ -48,6 +48,43 @@ bool consumeRwfsRecovery()
     return true;
 }
 
+// openbmconce=factory-reset (or clean-rwfs-filesystem) — force an rwfs
+// reformat. Still set in the env during initramfs; clear-once.service
+// clears openbmconce later, so we don't touch it here.
+bool consumeFactoryReset()
+{
+    auto once = uenv::get("openbmconce");
+    if (!once)
+    {
+        return false;
+    }
+    // openbmconce is a space-separated list; word-match like `grep -w`.
+    auto hasToken = [](std::string_view s, std::string_view t) {
+        for (auto p = s.find(t); p != std::string_view::npos;
+             p = s.find(t, p + 1))
+        {
+            bool left = (p == 0) || s[p - 1] == ' ';
+            auto end = p + t.size();
+            bool right = (end == s.size()) || s[end] == ' ';
+            if (left && right)
+            {
+                return true;
+            }
+        }
+        return false;
+    };
+    if (hasToken(*once, "factory-reset") ||
+        hasToken(*once, "clean-rwfs-filesystem"))
+    {
+        std::cerr << std::format(
+            "nvidia-emmc-init: openbmconce='{}' requests factory reset — "
+            "will reformat rwfs\n",
+            *once);
+        return true;
+    }
+    return false;
+}
+
 // emmc_secure_erase: back up rwfs, secure-erase the whole device, leave a
 // backup image at kRwfsBackupImage for step 8 to restore from.
 void consumeSecureErase(std::string_view device, uint64_t sectors)
@@ -183,7 +220,7 @@ int run(std::string_view device)
     const std::string rwdev =
         emmc::util::partDevice(device, emmc::layout::rwfsPartitionNum());
 
-    const bool force_format_rwfs = consumeRwfsRecovery();
+    const bool force_format_rwfs = consumeRwfsRecovery() || consumeFactoryReset();
     consumeSecureErase(device, disk->sectors);
     consumeFullSecureErase(device, disk->sectors);
     consumeRepartition(device, disk->sectors);
