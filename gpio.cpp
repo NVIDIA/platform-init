@@ -40,6 +40,7 @@ void set(const char* line_name, int value,
         if (!line && find_timeout <= 0s)
         {
             std::cerr << std::format("{} Unable to find\n", line_name);
+            io.erase(line_name);
             return;
         }
         try
@@ -52,6 +53,7 @@ void set(const char* line_name, int value,
             std::cerr << std::format(
                 "{} unable to set direction and value {}\n", line_name,
                 e.what());
+            io.erase(line_name);
             return;
         }
         // No need to set if the init did it for us
@@ -60,6 +62,62 @@ void set(const char* line_name, int value,
     }
     std::cerr << std::format("{} Settingto {}\n", line_name, value);
     line.set_value(value);
+}
+
+// Explicit release: drop our request on a single line so another daemon
+// (portctrl, x86-power-control, etc.) can claim it. The kernel keeps the
+// output level until someone else drives it. Use after platform_init is
+// done driving the line.
+void release(const char* line_name)
+{
+    auto it = io.find(line_name);
+    if (it == io.end())
+    {
+        return;
+    }
+    if (it->second)
+    {
+        try
+        {
+            it->second.release();
+            std::cerr << std::format("{} Released\n", line_name);
+        }
+        catch (const std::exception& e)
+        {
+            std::cerr << std::format("{} release failed: {}\n", line_name,
+                                     e.what());
+        }
+    }
+    io.erase(it);
+}
+
+// Release every line platform-init has requested. Call at the very end of
+// init so downstream services (portctrl, x86-power-control, etc.) can claim
+// the lines they need.
+void release_all()
+{
+    for (auto& [name, line] : io)
+    {
+        // A failed set()/get() can leave an empty line in the map. Calling
+        // release() on an empty line throws std::logic_error (not
+        // std::system_error), which would otherwise crash the daemon. Skip
+        // any line we never actually acquired.
+        if (!line)
+        {
+            continue;
+        }
+        try
+        {
+            line.release();
+            std::cerr << std::format("{} Released\n", name);
+        }
+        catch (const std::exception& e)
+        {
+            std::cerr << std::format("{} release failed: {}\n", name,
+                                     e.what());
+        }
+    }
+    io.clear();
 }
 
 int get(const char* line_name)
@@ -103,6 +161,7 @@ Event::Event(const char* line_name_in, int value_in) :
     int val = line.get_value();
     if (val == value)
     {
+        alreadyAtValue = true;
         std::cerr << std::format("{} GpioEvent is already {}\n", line_name,
                                  val);
     }
@@ -118,6 +177,11 @@ EventResult Event::wait()
     {
         std::cerr << std::format("Line {} wasn't initialized\n", line_name);
         return EventResult::Error;
+    }
+    if (alreadyAtValue)
+    {
+        std::cerr << std::format("{} already at target — no wait\n", line_name);
+        return EventResult::Asserted;
     }
     std::cerr << std::format("{}  Waiting to go to {}\n", line_name,
                              (value != 0) ? "assert" : "deassert");
