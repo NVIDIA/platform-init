@@ -12,6 +12,7 @@
 #include "utilities.hpp"
 
 #include <systemd/sd-daemon.h>
+#include <unistd.h>
 
 #include <filesystem>
 #include <iostream>
