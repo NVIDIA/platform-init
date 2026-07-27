@@ -150,7 +150,7 @@ static bool is_unit_active(sdbusplus::bus_t& bus, const std::string& unit)
             "org.freedesktop.systemd1.Manager", "GetUnit");
         m.append(unit);
         auto r = bus.call(m);
-        sdbusplus::message::object_path path;
+        sdbusplus::object_path path;
         r.read(path);
 
         auto m2 =
