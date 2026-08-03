@@ -29,6 +29,21 @@ enum class EudaResult
 
 int run(std::string_view device);
 
+struct OnceResetRequest
+{
+    bool clean_rwfs = false;
+    bool factory_reset = false;
+    bool complete_reset = false;
+
+    [[nodiscard]] constexpr bool formatsRwfs() const
+    {
+        return clean_rwfs || factory_reset || complete_reset;
+    }
+};
+
+// Parse the whitespace-separated openbmconce request tokens.
+OnceResetRequest parseOpenbmconce(std::string_view value);
+
 // expected_bytes is derived inside the function from EXT_CSD's
 // MAX_ENH_SIZE_MULT — the chip itself reports what we should program.
 // Real on-chip size (SEC_COUNT × 512) is logged but not used for the

@@ -27,3 +27,31 @@ TEST(EmmcInitFlow, RunOnNonexistentDeviceReturnsEmmcMissing)
     int rc = emmc::init::run("/dev/this-does-not-exist");
     EXPECT_EQ(rc, emmc::init::kExitEmmcMissing);
 }
+
+TEST(EmmcInitFlow, OpenbmconceFactoryResetFormatsRwfsOnly)
+{
+    auto request = emmc::init::parseOpenbmconce("factory-reset");
+    EXPECT_FALSE(request.clean_rwfs);
+    EXPECT_TRUE(request.factory_reset);
+    EXPECT_FALSE(request.complete_reset);
+    EXPECT_TRUE(request.formatsRwfs());
+}
+
+TEST(EmmcInitFlow, OpenbmconceCompleteResetFormatsRwfsAndLogs)
+{
+    auto request = emmc::init::parseOpenbmconce("complete-reset");
+    EXPECT_FALSE(request.clean_rwfs);
+    EXPECT_FALSE(request.factory_reset);
+    EXPECT_TRUE(request.complete_reset);
+    EXPECT_TRUE(request.formatsRwfs());
+}
+
+TEST(EmmcInitFlow, OpenbmconceMatchesWholeWhitespaceSeparatedTokens)
+{
+    auto request = emmc::init::parseOpenbmconce(
+        "pre-complete-reset complete-reset-extra\tclean-rwfs-filesystem");
+    EXPECT_TRUE(request.clean_rwfs);
+    EXPECT_FALSE(request.factory_reset);
+    EXPECT_FALSE(request.complete_reset);
+    EXPECT_TRUE(request.formatsRwfs());
+}
