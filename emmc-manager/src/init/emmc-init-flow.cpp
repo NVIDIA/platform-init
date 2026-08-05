@@ -9,6 +9,7 @@
 #include "emmc-util.h"
 
 #include <cerrno>
+#include <cctype>
 #include <cstring>
 #include <filesystem>
 #include <format>
@@ -20,6 +21,45 @@ namespace emmc::init
 
 namespace
 {
+
+constexpr std::string_view kUserLogsMount = "/var/emmc/user-logs";
+
+bool hasEnvToken(std::string_view value, std::string_view token)
+{
+    std::size_t pos = 0;
+    while (pos < value.size())
+    {
+        while (pos < value.size()
+               && std::isspace(static_cast<unsigned char>(value[pos])) != 0)
+        {
+            ++pos;
+        }
+        const std::size_t start = pos;
+        while (pos < value.size()
+               && std::isspace(static_cast<unsigned char>(value[pos])) == 0)
+        {
+            ++pos;
+        }
+        if (value.substr(start, pos - start) == token)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::string partitionDeviceForMount(std::string_view device,
+                                    std::string_view mount_point)
+{
+    for (auto const& p : emmc::layout::kPartitions)
+    {
+        if (p.mount != nullptr && std::string_view(p.mount) == mount_point)
+        {
+            return emmc::util::partDevice(device, p.num);
+        }
+    }
+    return {};
+}
 
 // BLKRRPART after secure-erase so the kernel drops its cached partition
 // table; without this createPartitions() short-circuits on stale
@@ -48,41 +88,37 @@ bool consumeRwfsRecovery()
     return true;
 }
 
-// openbmconce=factory-reset (or clean-rwfs-filesystem) — force an rwfs
-// reformat. Still set in the env during initramfs; clear-once.service
-// clears openbmconce later, so we don't touch it here.
-bool consumeFactoryReset()
+void logOnceResetRequest(const OnceResetRequest& request,
+                         std::string_view openbmconce)
+{
+    if (request.complete_reset)
+    {
+        std::cerr << std::format(
+            "nvidia-emmc-init: openbmconce='{}' requests complete reset; "
+            "will reformat rwfs and user logs\n",
+            openbmconce);
+        return;
+    }
+    if (request.factory_reset || request.clean_rwfs)
+    {
+        std::cerr << std::format(
+            "nvidia-emmc-init: openbmconce='{}' requests factory reset; "
+            "will reformat rwfs\n",
+            openbmconce);
+    }
+}
+
+OnceResetRequest readOnceResetRequest()
 {
     auto once = uenv::get("openbmconce");
     if (!once)
     {
-        return false;
+        return {};
     }
-    // openbmconce is a space-separated list; word-match like `grep -w`.
-    auto hasToken = [](std::string_view s, std::string_view t) {
-        for (auto p = s.find(t); p != std::string_view::npos;
-             p = s.find(t, p + 1))
-        {
-            bool left = (p == 0) || s[p - 1] == ' ';
-            auto end = p + t.size();
-            bool right = (end == s.size()) || s[end] == ' ';
-            if (left && right)
-            {
-                return true;
-            }
-        }
-        return false;
-    };
-    if (hasToken(*once, "factory-reset") ||
-        hasToken(*once, "clean-rwfs-filesystem"))
-    {
-        std::cerr << std::format(
-            "nvidia-emmc-init: openbmconce='{}' requests factory reset — "
-            "will reformat rwfs\n",
-            *once);
-        return true;
-    }
-    return false;
+
+    OnceResetRequest request = parseOpenbmconce(*once);
+    logOnceResetRequest(request, *once);
+    return request;
 }
 
 // emmc_secure_erase: back up rwfs, secure-erase the whole device, leave a
@@ -172,6 +208,27 @@ int formatRwfsIfNeeded(std::string_view rwdev, bool force)
     return kExitOk;
 }
 
+int formatUserLogsForCompleteReset(std::string_view device)
+{
+    std::string logdev = partitionDeviceForMount(device, kUserLogsMount);
+    if (logdev.empty())
+    {
+        std::cerr << std::format(
+            "nvidia-emmc-init: complete reset requested but no partition "
+            "maps to {}\n",
+            kUserLogsMount);
+        return kExitRwfsFormat;
+    }
+    if (!format::formatPartition(logdev))
+    {
+        std::cerr << std::format(
+            "nvidia-emmc-init: user log partition format failed: {}\n",
+            logdev);
+        return kExitRwfsFormat;
+    }
+    return kExitOk;
+}
+
 void restoreRwfsFromBackupIfPresent(std::string_view rwdev)
 {
     std::error_code ec;
@@ -207,6 +264,15 @@ int validateOrLastResortReformat(std::string_view rwdev)
 
 } // namespace
 
+OnceResetRequest parseOpenbmconce(std::string_view value)
+{
+    OnceResetRequest request{};
+    request.clean_rwfs = hasEnvToken(value, "clean-rwfs-filesystem");
+    request.factory_reset = hasEnvToken(value, "factory-reset");
+    request.complete_reset = hasEnvToken(value, "complete-reset");
+    return request;
+}
+
 int run(std::string_view device)
 {
     auto disk = ioctl::readDiskGeometry(device);
@@ -220,7 +286,9 @@ int run(std::string_view device)
     const std::string rwdev =
         emmc::util::partDevice(device, emmc::layout::rwfsPartitionNum());
 
-    const bool force_format_rwfs = consumeRwfsRecovery() || consumeFactoryReset();
+    const OnceResetRequest once_reset = readOnceResetRequest();
+    const bool force_format_rwfs =
+        consumeRwfsRecovery() || once_reset.formatsRwfs();
     consumeSecureErase(device, disk->sectors);
     consumeFullSecureErase(device, disk->sectors);
     consumeRepartition(device, disk->sectors);
@@ -233,6 +301,14 @@ int run(std::string_view device)
     if (!createPartitions(device, disk->sectors - 1))
     {
         return kExitPartitionCreate;
+    }
+
+    if (once_reset.complete_reset)
+    {
+        if (int rc = formatUserLogsForCompleteReset(device); rc != kExitOk)
+        {
+            return rc;
+        }
     }
 
     if (int rc = formatRwfsIfNeeded(rwdev, force_format_rwfs); rc != kExitOk)
