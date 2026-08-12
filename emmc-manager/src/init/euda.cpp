@@ -52,6 +52,18 @@ bool writeEnhSizeMult(std::string_view device, uint32_t target)
                                   (target >> 16U) & 0xFFU);
 }
 
+bool writeEnhStartAddr(std::string_view device, uint32_t target)
+{
+    return ioctl::writeExtCsdByte(device, emmc::extcsd::kEnh_Start_Addr_Msb,
+                                  (target >> 24U) & 0xFFU) &&
+           ioctl::writeExtCsdByte(device, emmc::extcsd::kEnh_Start_Addr_Byte2,
+                                  (target >> 16U) & 0xFFU) &&
+           ioctl::writeExtCsdByte(device, emmc::extcsd::kEnh_Start_Addr_Byte1,
+                                  (target >> 8U) & 0xFFU) &&
+           ioctl::writeExtCsdByte(device, emmc::extcsd::kEnh_Start_Addr_Lsb,
+                                  target & 0xFFU);
+}
+
 } // namespace
 
 EudaResult eudaConfig(std::string_view device, bool recheck)
@@ -68,8 +80,13 @@ EudaResult eudaConfig(std::string_view device, bool recheck)
 
     const uint8_t completed =
         ext_csd[emmc::extcsd::kPartition_Setting_Completed];
+    const uint8_t partitions_attribute =
+        ext_csd[emmc::extcsd::kPartitions_Attribute];
+    const uint8_t erase_group_def = ext_csd[emmc::extcsd::kErase_Group_Def];
     const uint32_t programmed =
         read24Le(ext_csd, emmc::extcsd::kEnh_Size_Mult_Lsb);
+    const uint32_t enh_start_addr =
+        read32Le(ext_csd, emmc::extcsd::kEnh_Start_Addr_Lsb);
     const uint32_t max_enh =
         read24Le(ext_csd, emmc::extcsd::kMax_Enh_Size_Mult_Lsb);
     const uint8_t hc_wp = ext_csd[emmc::extcsd::kHc_Wp_Grp_Size];
@@ -93,15 +110,18 @@ EudaResult eudaConfig(std::string_view device, bool recheck)
 
     // AST2700: program the maximum enhanced area the device allows.
     const uint32_t target = max_enh;
+    const uint32_t target_enh_start_addr = 0;
+    const uint8_t target_partitions_attribute = static_cast<uint8_t>(
+        partitions_attribute | emmc::extcsd::kPartitionsAttributeEnhUsr);
 
     std::cerr << std::format(
         "euda: state{} device={} PARTITION_SETTING_COMPLETED={} "
-        "ENH_SIZE_MULT={} MAX_ENH_SIZE_MULT={} HC_WP_GRP_SIZE={} "
-        "HC_ERASE_GRP_SIZE={} unit={}B programmed={}B expected={}B "
-        "real_size={}B (SEC_COUNT={})\n",
+        "ENH_SIZE_MULT={} ENH_START_ADDR=0x{:08x} MAX_ENH_SIZE_MULT={} "
+        "HC_WP_GRP_SIZE={} HC_ERASE_GRP_SIZE={} unit={}B programmed={}B "
+        "expected={}B real_size={}B (SEC_COUNT={})\n",
         recheck ? " (post-reset recheck)" : "", device, completed, programmed,
-        max_enh, hc_wp, hc_erase, unit_bytes, programmed_bytes, expected_bytes,
-        real_size_bytes, sec_count);
+        enh_start_addr, max_enh, hc_wp, hc_erase, unit_bytes, programmed_bytes,
+        expected_bytes, real_size_bytes, sec_count);
 
     if (completed != 0 && programmed == target)
     {
@@ -141,13 +161,34 @@ EudaResult eudaConfig(std::string_view device, bool recheck)
     }
 
     std::cerr << std::format(
-        "euda: programming ENH_SIZE_MULT={} (was {}) and setting "
+        "euda: programming ENH_SIZE_MULT={} (was {}), "
+        "ENH_START_ADDR=0x{:08x}->0x{:08x}, ERASE_GROUP_DEF=0x{:02x}"
+        "->0x{:02x}, PARTITIONS_ATTRIBUTE=0x{:02x}->0x{:02x}, and setting "
         "PARTITION_SETTING_COMPLETED=1 via CMD6 SWITCH\n",
-        target, programmed);
+        target, programmed, enh_start_addr, target_enh_start_addr,
+        erase_group_def, emmc::extcsd::kEraseGroupDefHighCapacity,
+        partitions_attribute, target_partitions_attribute);
 
+    if (!ioctl::writeExtCsdByte(device, emmc::extcsd::kErase_Group_Def,
+                                emmc::extcsd::kEraseGroupDefHighCapacity))
+    {
+        std::cerr << "euda: ERASE_GROUP_DEF byte write failed\n";
+        return EudaResult::Failed;
+    }
+    if (!writeEnhStartAddr(device, target_enh_start_addr))
+    {
+        std::cerr << "euda: ENH_START_ADDR byte write failed\n";
+        return EudaResult::Failed;
+    }
     if (!writeEnhSizeMult(device, target))
     {
         std::cerr << "euda: ENH_SIZE_MULT byte write failed\n";
+        return EudaResult::Failed;
+    }
+    if (!ioctl::writeExtCsdByte(device, emmc::extcsd::kPartitions_Attribute,
+                                target_partitions_attribute))
+    {
+        std::cerr << "euda: PARTITIONS_ATTRIBUTE byte write failed\n";
         return EudaResult::Failed;
     }
     if (!ioctl::writeExtCsdByte(
