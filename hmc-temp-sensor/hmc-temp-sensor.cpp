@@ -35,21 +35,20 @@
 #include <string_view>
 #include <thread>
 
-static constexpr uint8_t     SLAVE_ADDR   = 0x4f;
-static constexpr const char* SLAVE_TYPE   = "slave-24c512ro";
-static constexpr const char* TEMP_INPUT   = "/sys/class/hwmon/hwmon0/temp1_input";
-static constexpr const char* TEMP_MAX     = "/sys/class/hwmon/hwmon0/temp1_max";
-static constexpr int32_t     THRESHOLD_MILLIDEG = 85000; // 85°C
-static constexpr int         TEMP_OFFSET  = 0xF0;
-static constexpr int         THRESH_OFFSET = 0xF4;
+static constexpr uint8_t SLAVE_ADDR = 0x4f;
+static constexpr const char* SLAVE_TYPE = "slave-24c512ro";
+static constexpr const char* TEMP_INPUT = "/sys/class/hwmon/hwmon0/temp1_input";
+static constexpr const char* TEMP_MAX = "/sys/class/hwmon/hwmon0/temp1_max";
+static constexpr int32_t THRESHOLD_MILLIDEG = 85000; // 85°C
+static constexpr int TEMP_OFFSET = 0xF0;
+static constexpr int THRESH_OFFSET = 0xF4;
 
 // Encode millidegrees → [fractional, LSB, MID, MSB]
 static std::array<uint8_t, 4> encode(int32_t millideg)
 {
-    uint32_t deg_int  = static_cast<uint32_t>(millideg / 1000);
-    uint8_t  deg_frac = static_cast<uint8_t>((millideg % 1000) * 256 / 1000);
-    return {deg_frac,
-            static_cast<uint8_t>(deg_int & 0xFF),
+    uint32_t deg_int = static_cast<uint32_t>(millideg / 1000);
+    uint8_t deg_frac = static_cast<uint8_t>((millideg % 1000) * 256 / 1000);
+    return {deg_frac, static_cast<uint8_t>(deg_int & 0xFF),
             static_cast<uint8_t>((deg_int >> 8) & 0xFF),
             static_cast<uint8_t>((deg_int >> 16) & 0xFF)};
 }
@@ -99,8 +98,8 @@ static int do_init(unsigned bus, const std::string& slave_file,
     eeprom_write(mem_file, THRESH_OFFSET, encode(THRESHOLD_MILLIDEG));
 
     std::cerr << std::format(
-        "hmc-temp-sensor: init done on bus {} slave 0x{:02x}\n",
-        bus, SLAVE_ADDR);
+        "hmc-temp-sensor: init done on bus {} slave 0x{:02x}\n", bus,
+        SLAVE_ADDR);
     return 0;
 }
 
@@ -120,7 +119,12 @@ static void usage()
 
 int main(int argc, char** argv)
 {
-    enum class Mode { None, Init, Oneshot };
+    enum class Mode
+    {
+        None,
+        Init,
+        Oneshot
+    };
     Mode mode = Mode::None;
     unsigned bus = 3;
 
@@ -137,11 +141,14 @@ int main(int argc, char** argv)
         }
         else
         {
-            try { bus = std::stoul(argv[i]); }
+            try
+            {
+                bus = std::stoul(argv[i]);
+            }
             catch (...)
             {
-                std::cerr << std::format(
-                    "hmc-temp-sensor: invalid arg '{}'\n", arg);
+                std::cerr << std::format("hmc-temp-sensor: invalid arg '{}'\n",
+                                         arg);
                 usage();
                 return 1;
             }
@@ -156,8 +163,8 @@ int main(int argc, char** argv)
 
     const std::string slave_file = std::format(
         "/sys/bus/i2c/devices/i2c-{}/{}-10{:02x}/name", bus, bus, SLAVE_ADDR);
-    const std::string new_dev = std::format(
-        "/sys/bus/i2c/devices/i2c-{}/new_device", bus);
+    const std::string new_dev =
+        std::format("/sys/bus/i2c/devices/i2c-{}/new_device", bus);
     const std::string mem_file = std::format(
         "/sys/bus/i2c/devices/{}-10{:02x}/slave-eeprom", bus, SLAVE_ADDR);
 

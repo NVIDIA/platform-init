@@ -19,7 +19,8 @@
 using namespace std::chrono_literals;
 
 // max31790 fan controller I2C addresses on bus 6
-static constexpr std::array<uint8_t, 4> fan_ctrl_addrs{{0x20, 0x23, 0x2c, 0x2f}};
+static constexpr std::array<uint8_t, 4> fan_ctrl_addrs{
+    {0x20, 0x23, 0x2c, 0x2f}};
 
 static constexpr const char* max31790_driver = "/sys/bus/i2c/drivers/max31790";
 static constexpr std::array<const char*, 4> max31790_keys{
@@ -89,10 +90,9 @@ static void io_board_detect()
          "/etc/default/bmcweb/mrd_PlatformEnvironmentMetrics.json"},
     }};
 
-    for (const char* dir : {"/etc/default/cpldmanager",
-                             "/etc/default/pldm",
-                             "/etc/default/entity-manager",
-                             "/etc/default/bmcweb"})
+    for (const char* dir :
+         {"/etc/default/cpldmanager", "/etc/default/pldm",
+          "/etc/default/entity-manager", "/etc/default/bmcweb"})
     {
         std::error_code ec;
         std::filesystem::create_directories(dir, ec);
@@ -110,24 +110,23 @@ static void io_board_detect()
         std::filesystem::copy_file(
             src, dst, std::filesystem::copy_options::overwrite_existing, ec);
         if (ec)
-            std::cerr << std::format("io_board_detect: {} -> {}: {}\n",
-                                     src, dst, ec.message());
+            std::cerr << std::format("io_board_detect: {} -> {}: {}\n", src,
+                                     dst, ec.message());
     }
 
     if (cx8)
     {
         // Hold SMA reset pins for CX8 MCU
-        gpio::set("MCU_RST_N-O",     0);
+        gpio::set("MCU_RST_N-O", 0);
         gpio::set("SEC_MCU_RST_N-O", 0);
     }
 
     // Create cpldmanager.env symlink
-    const char* env_src = cx8
-        ? "/etc/cpldupdate/cpldmanager_cx8.env"
-        : "/etc/cpldupdate/cpldmanager_cx7.env";
+    const char* env_src = cx8 ? "/etc/cpldupdate/cpldmanager_cx8.env"
+                              : "/etc/cpldupdate/cpldmanager_cx7.env";
     std::error_code ec;
-    std::filesystem::create_symlink(
-        env_src, "/etc/cpldupdate/cpldmanager.env", ec);
+    std::filesystem::create_symlink(env_src, "/etc/cpldupdate/cpldmanager.env",
+                                    ec);
     if (ec && ec != std::errc::file_exists)
         std::cerr << std::format("io_board_detect: symlink: {}\n",
                                  ec.message());
@@ -140,8 +139,7 @@ static bool max31790_bind_all()
     bool ok = true;
     for (const char* k : max31790_keys)
     {
-        if (std::filesystem::exists(
-                std::string(max31790_driver) + "/" + k))
+        if (std::filesystem::exists(std::string(max31790_driver) + "/" + k))
             continue;
         if (std::ofstream f{std::string(max31790_driver) + "/bind"}; f)
             f << k;
@@ -163,9 +161,15 @@ static void max31790_unbind_all()
 static void fan_set_emergency_speed()
 {
     std::cerr << "fan_init: tray detection timeout — setting fans to 100%\n";
-    std::system("systemctl stop phosphor-pid-control");
-    static constexpr const char* base =
-        "/sys/class/i2c-dev/i2c-6/device";
+    // Best-effort: if pid-control cannot be stopped it keeps driving the fans
+    // against the manual PWM below, so surface the failure.
+    const int rc = std::system("systemctl stop phosphor-pid-control");
+    if (rc != 0)
+    {
+        std::cerr << std::format(
+            "fan_init: stopping phosphor-pid-control failed (status {})\n", rc);
+    }
+    static constexpr const char* base = "/sys/class/i2c-dev/i2c-6/device";
     for (const char* dev : {"6-0020", "6-0023", "6-002c", "6-002f"})
     {
         const auto hwmon = std::string(base) + "/" + dev + "/hwmon";
@@ -188,9 +192,8 @@ static bool wait_for_em_fan_object(std::chrono::seconds timeout)
 {
     using namespace std::chrono_literals;
     constexpr const char* em_svc = "xyz.openbmc_project.EntityManager";
-    constexpr const char* fan_path =
-        "/xyz/openbmc_project/inventory/system"
-        "/chassis/Chassis_0/Chassis_0_FAN";
+    constexpr const char* fan_path = "/xyz/openbmc_project/inventory/system"
+                                     "/chassis/Chassis_0/Chassis_0_FAN";
 
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     while (std::chrono::steady_clock::now() < deadline)
@@ -198,15 +201,16 @@ static bool wait_for_em_fan_object(std::chrono::seconds timeout)
         try
         {
             auto bus = sdbusplus::bus::new_default();
-            auto m   = bus.new_method_call(em_svc, fan_path,
-                                            "org.freedesktop.DBus.Introspectable",
-                                            "Introspect");
+            auto m = bus.new_method_call(em_svc, fan_path,
+                                         "org.freedesktop.DBus.Introspectable",
+                                         "Introspect");
             std::string xml;
             bus.call(m).read(xml);
             if (!xml.empty())
                 return true;
         }
-        catch (...) {}
+        catch (...)
+        {}
         std::this_thread::sleep_for(1s);
     }
     return false;
@@ -262,8 +266,8 @@ static void fan_controller_init()
         }
         catch (const std::exception& e)
         {
-            std::cerr << std::format(
-                "fan_init: watchdog config 0x{:02x}: {}\n", addr, e.what());
+            std::cerr << std::format("fan_init: watchdog config 0x{:02x}: {}\n",
+                                     addr, e.what());
         }
     }
 
@@ -278,8 +282,8 @@ static void fan_controller_init()
         }
         catch (const std::exception& e)
         {
-            std::cerr << std::format(
-                "fan_init: TACH config 0x{:02x}: {}\n", addr, e.what());
+            std::cerr << std::format("fan_init: TACH config 0x{:02x}: {}\n",
+                                     addr, e.what());
         }
     }
 
@@ -294,8 +298,8 @@ static void fan_controller_init()
         }
         catch (const std::exception& e)
         {
-            std::cerr << std::format(
-                "fan_init: TACH enable 0x{:02x}: {}\n", addr, e.what());
+            std::cerr << std::format("fan_init: TACH enable 0x{:02x}: {}\n",
+                                     addr, e.what());
         }
     }
 
@@ -321,8 +325,8 @@ static void fan_controller_init()
         }
         catch (const std::exception& e)
         {
-            std::cerr << std::format(
-                "fan_init: watchdog clear 0x{:02x}: {}\n", addr, e.what());
+            std::cerr << std::format("fan_init: watchdog clear 0x{:02x}: {}\n",
+                                     addr, e.what());
         }
     }
 
@@ -336,29 +340,30 @@ static void fan_controller_init()
 
 // Source: create_eeprom_devices() in create_eeprom_devices.sh
 // Binds EEPROMs that only respond after FPGA_READY asserts.
-// DC-SCM (bus 3, 0x57) and PDB/Module-1 FRU are probed or left to entity-manager.
+// DC-SCM (bus 3, 0x57) and PDB/Module-1 FRU are probed or left to
+// entity-manager.
 static constexpr std::array<EepromDevice, 14> boot_eeproms{{
-    {1,  0x54, "24c02",  "CBC 0 FRU",         false},
-    {1,  0x55, "24c02",  "CBC 1 FRU",         false},
-    {2,  0x57, "24c02",  "HMC FRU",           false},
-    {2,  0x50, "24c64",  "Module 0 FRU",      false},
-    {2,  0x54, "24c02",  "CBC 2 FRU",         false},
-    {2,  0x55, "24c02",  "CBC 3 FRU",         false},
-    {4,  0x50, "24c64",  "Module 0 Aux",      false},
-    {9,  0x50, "24c64",  "Module 0 Aux(b9)",  false},
-    {9,  0x51, "24c64",  "Module 1 Aux",      false},
-    {14, 0x50, "24c128", "BF3 (bus 14)",      false},
-    {15, 0x50, "24c128", "BF3 (bus 15)",      false},
-    {21, 0x50, "24c64",  "Module 0 IO Board", false},
-    {23, 0x57, "24c128", "FrontIO FRU",       false},
-    {33, 0x50, "24c64",  "Module 1 IO Board", false},
+    {1, 0x54, "24c02", "CBC 0 FRU", false},
+    {1, 0x55, "24c02", "CBC 1 FRU", false},
+    {2, 0x57, "24c02", "HMC FRU", false},
+    {2, 0x50, "24c64", "Module 0 FRU", false},
+    {2, 0x54, "24c02", "CBC 2 FRU", false},
+    {2, 0x55, "24c02", "CBC 3 FRU", false},
+    {4, 0x50, "24c64", "Module 0 Aux", false},
+    {9, 0x50, "24c64", "Module 0 Aux(b9)", false},
+    {9, 0x51, "24c64", "Module 1 Aux", false},
+    {14, 0x50, "24c128", "BF3 (bus 14)", false},
+    {15, 0x50, "24c128", "BF3 (bus 15)", false},
+    {21, 0x50, "24c64", "Module 0 IO Board", false},
+    {23, 0x57, "24c128", "FrontIO FRU", false},
+    {33, 0x50, "24c64", "Module 1 IO Board", false},
 }};
 
 // Source: bind_i2c_muxes() in bmc_ready.sh
 // Binds a pca954x I2C mux and sets idle_state after binding.
 static void bind_i2c_mux(unsigned bus, unsigned addr, int idle_state)
 {
-    const auto key  = std::format("{}-{:04x}", bus, addr);
+    const auto key = std::format("{}-{:04x}", bus, addr);
     const auto path = "/sys/bus/i2c/drivers/pca954x/" + key;
     if (!std::filesystem::exists(path))
     {
@@ -387,7 +392,8 @@ static void bind_hsc(const char* key)
 // Configures GB200 PDB VR DC loadline to reduce input peak current.
 static void set_pdb_vr()
 {
-    for (uint8_t addr : {static_cast<uint8_t>(0x60), static_cast<uint8_t>(0x61)})
+    for (uint8_t addr :
+         {static_cast<uint8_t>(0x60), static_cast<uint8_t>(0x61)})
     {
         i2c::RawDevice dev{6, addr};
         dev.write_word(0xEB, 0x0796);
@@ -414,13 +420,15 @@ static void enable_hmc_cpld_pex_signature_checking()
             {
                 i2c::RawDevice hmc{1, 0x45};
                 hmc.write_byte(0x00, 0xd0);
-                std::cerr << "gb200nvl-bmc: HMC CPLD PEX signature checking enabled\n";
+                std::cerr
+                    << "gb200nvl-bmc: HMC CPLD PEX signature checking enabled\n";
                 return;
             }
         }
         catch (const std::exception& e)
         {
-            std::cerr << std::format("gb200nvl-bmc: cpld probe: {}\n", e.what());
+            std::cerr << std::format("gb200nvl-bmc: cpld probe: {}\n",
+                                     e.what());
         }
         std::this_thread::sleep_for(1s);
     }
@@ -431,16 +439,17 @@ int init_gb200nvl_bmc()
 {
     std::cerr << "gb200nvl-bmc: platform init start\n";
 
-    // If standby power is not yet asserted, put outputs into safe initial state.
+    // If standby power is not yet asserted, put outputs into safe initial
+    // state.
     if (gpio::get("STBY_POWER_PG-I") == 0)
     {
-        gpio::set("RUN_POWER_EN-O",  0);
-        gpio::set("PWR_BRAKE_L-O",   0);
-        gpio::set("SHDN_REQ_L-O",    0);
-        gpio::set("SHDN_FORCE_L-O",  0);
-        gpio::set("SYS_RST_IN_L-O",  0);
+        gpio::set("RUN_POWER_EN-O", 0);
+        gpio::set("PWR_BRAKE_L-O", 0);
+        gpio::set("SHDN_REQ_L-O", 0);
+        gpio::set("SHDN_FORCE_L-O", 0);
+        gpio::set("SYS_RST_IN_L-O", 0);
         gpio::set("GLOBAL_WP_BMC-O", 0);
-        gpio::set("HMC_RESET_L-O",   0);
+        gpio::set("HMC_RESET_L-O", 0);
     }
 
     gpio::set("STBY_POWER_EN-O", 1);
@@ -482,7 +491,8 @@ int init_gb200nvl_bmc()
     else
         std::cerr << "gb200nvl-bmc: i2c-33 absent, skipping 33-0021\n";
 
-    // DC-SCM GPIO expander on bus 9 addr 0x76 is optional; probe before binding.
+    // DC-SCM GPIO expander on bus 9 addr 0x76 is optional; probe before
+    // binding.
     {
         try
         {
@@ -491,17 +501,18 @@ int init_gb200nvl_bmc()
             if (probe.read_byte(0x00, v) == 0)
                 iox_bind(9, 0x76);
         }
-        catch (...) {}
+        catch (...)
+        {}
     }
 
     // USB hub reset: assert low for 1 s then release.
-    gpio::set("USB_HUB_RESET_L-O",    0);
+    gpio::set("USB_HUB_RESET_L-O", 0);
     gpio::set("SEC_USB2_HUB_RST_L-O", 0);
     std::this_thread::sleep_for(1s);
-    gpio::set("USB_HUB_RESET_L-O",    1);
+    gpio::set("USB_HUB_RESET_L-O", 1);
     gpio::set("SEC_USB2_HUB_RST_L-O", 1);
 
-    gpio::set("SGPIO_BMC_EN-O",              1);
+    gpio::set("SGPIO_BMC_EN-O", 1);
     gpio::set("BMC_EROT_FPGA_SPI_MUX_SEL-O", 1);
 
     // WAR: BMC was hard-reset (e.g. ERoT SRST during FW update) while the host
@@ -509,32 +520,34 @@ int init_gb200nvl_bmc()
     // so host power stays stable.
     if (gpio::get("FPGA_READY_BMC-I") == 1 && gpio::get("RUN_POWER_PG-I") == 1)
     {
-        std::cerr << "gb200nvl-bmc: BMC reset while host running — restoring GPIO state\n";
-        gpio::set("RUN_POWER_EN-O",  1);
-        gpio::set("PWR_BRAKE_L-O",   1);
-        gpio::set("SHDN_REQ_L-O",    1);
-        gpio::set("SHDN_FORCE_L-O",  1);
-        gpio::set("SYS_RST_IN_L-O",  gpio::get("SYS_RST_OUT_L-I"));
+        std::cerr
+            << "gb200nvl-bmc: BMC reset while host running — restoring GPIO state\n";
+        gpio::set("RUN_POWER_EN-O", 1);
+        gpio::set("PWR_BRAKE_L-O", 1);
+        gpio::set("SHDN_REQ_L-O", 1);
+        gpio::set("SHDN_FORCE_L-O", 1);
+        gpio::set("SYS_RST_IN_L-O", gpio::get("SYS_RST_OUT_L-I"));
     }
 
     // If HMC is not yet ready, set standby power GPIO state.
     if (gpio::get("HMC_READY-I") == 0)
     {
-        gpio::set("PWR_BRAKE_L-O",  1);
-        gpio::set("SHDN_REQ_L-O",   1);
+        gpio::set("PWR_BRAKE_L-O", 1);
+        gpio::set("SHDN_REQ_L-O", 1);
         gpio::set("SHDN_FORCE_L-O", 1);
         gpio::set("SYS_RST_IN_L-O", 0);
     }
 
-    // Arm edge events before releasing resets to avoid missing fast transitions.
-    gpio::Event hmc_ready("HMC_READY-I",               1);
-    gpio::Event fpga_ready("FPGA_READY_BMC-I",         1);
+    // Arm edge events before releasing resets to avoid missing fast
+    // transitions.
+    gpio::Event hmc_ready("HMC_READY-I", 1);
+    gpio::Event fpga_ready("FPGA_READY_BMC-I", 1);
     gpio::Event sec_fpga_ready("SEC_FPGA_READY_BMC-I", 1);
 
-    gpio::set("EROT_FPGA_RST_L-O",     1);
+    gpio::set("EROT_FPGA_RST_L-O", 1);
     gpio::set("SEC_EROT_FPGA_RST_L-O", 1);
-    gpio::set("HMC_EROT_RST_L-O",      1);
-    gpio::set("HMC_RESET_L-O",         1);
+    gpio::set("HMC_EROT_RST_L-O", 1);
+    gpio::set("HMC_RESET_L-O", 1);
 
     if (hmc_ready.wait() != gpio::EventResult::Asserted)
     {
@@ -545,7 +558,8 @@ int init_gb200nvl_bmc()
     // Fix hmcusb0 not appearing after AC cycle.
     {
         const char* usb = "1e6a3000.usb";
-        if (std::ofstream f{"/sys/bus/platform/drivers/ehci-platform/unbind"}; f)
+        if (std::ofstream f{"/sys/bus/platform/drivers/ehci-platform/unbind"};
+            f)
             f << usb;
         if (std::ofstream f{"/sys/bus/platform/drivers/ehci-platform/bind"}; f)
             f << usb;
@@ -568,7 +582,8 @@ int init_gb200nvl_bmc()
             if (probe.read_byte(0x00, v) == 0)
                 i2c::new_device(3, 0x57, "24c128");
         }
-        catch (...) {}
+        catch (...)
+        {}
     }
 
     bmc_boot_banner();

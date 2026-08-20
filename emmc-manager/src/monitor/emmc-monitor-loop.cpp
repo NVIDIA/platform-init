@@ -12,8 +12,8 @@
 #include <systemd/sd-event.h>
 #include <unistd.h>
 
-#include <chrono>
 #include <cerrno>
+#include <chrono>
 #include <cstring>
 #include <filesystem>
 #include <format>
@@ -99,8 +99,7 @@ bool capacityOver99(std::string_view mp)
 // Write-then-read probe with cleanup. False on any I/O error.
 bool rwHealthCheck(std::string_view mp)
 {
-    const std::string probe =
-        std::format("{}/.nvidia-emmc-monitor-health", mp);
+    const std::string probe = std::format("{}/.nvidia-emmc-monitor-health", mp);
     std::error_code ec;
     {
         std::ofstream ofs(probe);
@@ -163,10 +162,10 @@ bool checkOneMountPoint(std::string_view mount_point)
     bool ok1 = tickStrike(mount_point, "unmounted", unmounted,
                           "ResourceErrorsDetected",
                           std::format("BMC EMMC,{} unmounted", mount_point));
-    bool ok2 = tickStrike(
-        mount_point, "capacity", capacity_full,
-        "ResourceWarningThresholdExceeded",
-        std::format("BMC EMMC,{} capacity > 99%", mount_point));
+    bool ok2 =
+        tickStrike(mount_point, "capacity", capacity_full,
+                   "ResourceWarningThresholdExceeded",
+                   std::format("BMC EMMC,{} capacity > 99%", mount_point));
     bool ok3 = tickStrike(
         mount_point, "health_fail", rw_fail, "ResourceErrorsDetected",
         std::format("BMC EMMC,{} R/W health failed", mount_point));
@@ -202,8 +201,8 @@ bool triggerAutoRecovery(std::string_view mount_path, std::string_view reason)
             attempts + 1);
     }
     redfish::emitBmcRebootReason(std::format(
-        "Auto-recovery reboot for {} ({}) — attempt {}/{}", mount_path,
-        reason, attempts + 1, kMaxRebootRecoveryAttempts));
+        "Auto-recovery reboot for {} ({}) — attempt {}/{}", mount_path, reason,
+        attempts + 1, kMaxRebootRecoveryAttempts));
 
     bool ok_flag = false;
     if (mount_path == kRwfsMount)
@@ -233,7 +232,7 @@ bool triggerAutoRecovery(std::string_view mount_path, std::string_view reason)
 void monitorTick()
 {
     bool all_healthy = true;
-    for (auto const& p : emmc::layout::kPartitions)
+    for (const auto& p : emmc::layout::kPartitions)
     {
         if (p.mount == nullptr)
         {
@@ -254,12 +253,11 @@ void monitorTick()
         redfish::emitResourceErrorsCorrected(
             "BMC EMMC,RWFS recovery succeeded");
     }
-    if (all_healthy
-        && uenv::getCounter("emmc_reboot_recovery", kRrEnvConfig) > 0)
+    if (all_healthy &&
+        uenv::getCounter("emmc_reboot_recovery", kRrEnvConfig) > 0)
     {
         uenv::clear("emmc_reboot_recovery", kRrEnvConfig);
-        redfish::emitResourceErrorsCorrected(
-            "BMC EMMC,All partitions healthy");
+        redfish::emitResourceErrorsCorrected("BMC EMMC,All partitions healthy");
     }
 }
 
@@ -290,8 +288,8 @@ int installMonitorTimer(MonitorContext& ctx)
     {
         return -1;
     }
-    uint64_t when =
-        now + static_cast<uint64_t>(kMonitorTickSeconds) * 1000000ULL;
+    uint64_t when = now +
+                    static_cast<uint64_t>(kMonitorTickSeconds) * 1000000ULL;
     int rc = sd_event_add_time(ctx.event, &src, CLOCK_MONOTONIC, when,
                                1000000ULL, onTimer, nullptr);
     if (rc < 0)

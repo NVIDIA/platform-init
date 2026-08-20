@@ -22,32 +22,32 @@ namespace nvidia
 
 // Source: create_eeprom_devices.sh (NVL-BMC variant)
 static constexpr std::array<EepromDevice, 14> boot_eeproms{{
-    {1,  0x54, "24c02",  "CBC 0 FRU",              false},
-    {1,  0x55, "24c02",  "CBC 1 FRU",              false},
-    {2,  0x57, "24c02",  "HMC FRU",                false},
-    {2,  0x50, "24c64",  "Module 0 FRU",           false},
-    {2,  0x54, "24c02",  "CBC 2 FRU",              false},
-    {2,  0x55, "24c02",  "CBC 3 FRU",              false},
-    {4,  0x50, "24c64",  "Module 0 Aux EEPROM",    false},
-    {9,  0x50, "24c64",  "Module 0 Aux (bus9)",    false},
-    {9,  0x51, "24c64",  "Module 1 Aux (bus9)",    false},
-    {14, 0x50, "24c128", "BF3 Left FRU",           false},
-    {15, 0x50, "24c128", "BF3 Right FRU",          false},
-    {21, 0x50, "24c64",  "Module 0 IO Board FRU",  false},
-    {23, 0x57, "24c128", "FrontIO FRU",            false},
-    {33, 0x50, "24c64",  "Module 1 IO Board FRU",  false},
+    {1, 0x54, "24c02", "CBC 0 FRU", false},
+    {1, 0x55, "24c02", "CBC 1 FRU", false},
+    {2, 0x57, "24c02", "HMC FRU", false},
+    {2, 0x50, "24c64", "Module 0 FRU", false},
+    {2, 0x54, "24c02", "CBC 2 FRU", false},
+    {2, 0x55, "24c02", "CBC 3 FRU", false},
+    {4, 0x50, "24c64", "Module 0 Aux EEPROM", false},
+    {9, 0x50, "24c64", "Module 0 Aux (bus9)", false},
+    {9, 0x51, "24c64", "Module 1 Aux (bus9)", false},
+    {14, 0x50, "24c128", "BF3 Left FRU", false},
+    {15, 0x50, "24c128", "BF3 Right FRU", false},
+    {21, 0x50, "24c64", "Module 0 IO Board FRU", false},
+    {23, 0x57, "24c128", "FrontIO FRU", false},
+    {33, 0x50, "24c64", "Module 1 IO Board FRU", false},
 }};
 
 static constexpr std::array<EepromDevice, 9> poweron_eeproms{{
-    {14, 0x55, "24c128", "IPEX Left FRU",           true},
-    {14, 0x56, "24c128", "HDD BP Left FRU",         true},
-    {15, 0x55, "24c128", "IPEX Right FRU",          true},
-    {15, 0x56, "24c128", "HDD BP Right FRU",        true},
-    {17, 0x56, "24c128", "CX8 E1S BP FRU (bus17)",  true},
-    {21, 0x52, "24c128", "OSFP Board Left",         true},
-    {29, 0x56, "24c128", "CX8 E1S BP FRU (bus29)",  true},
-    {33, 0x52, "24c128", "OSFP Board Right",        true},
-    {54, 0x51, "24c128", "1G NIC FRU",              true},
+    {14, 0x55, "24c128", "IPEX Left FRU", true},
+    {14, 0x56, "24c128", "HDD BP Left FRU", true},
+    {15, 0x55, "24c128", "IPEX Right FRU", true},
+    {15, 0x56, "24c128", "HDD BP Right FRU", true},
+    {17, 0x56, "24c128", "CX8 E1S BP FRU (bus17)", true},
+    {21, 0x52, "24c128", "OSFP Board Left", true},
+    {29, 0x56, "24c128", "CX8 E1S BP FRU (bus29)", true},
+    {33, 0x52, "24c128", "OSFP Board Right", true},
+    {54, 0x51, "24c128", "1G NIC FRU", true},
 }};
 
 // Source: eeprom-crc-verifier golden_eeprom.bin (bus=11 addr=0x50 type=24c128)
@@ -69,7 +69,6 @@ static constexpr std::array<uint8_t, 158> golden_eeprom{{
     0x40, 0x17,
 }};
 
-
 // ── Platform init ─────────────────────────────────────────────────────────
 
 int init_vr_nvl_bmc()
@@ -83,9 +82,9 @@ int init_vr_nvl_bmc()
         // Source: bmc_set_initial_gpio_out() in bmc_ready.sh
         gpio::set("GLOBAL_WP_BMC-O", 0);
 
-        // Source: HSC mask-alert + clear-faults loop in bmc_set_initial_gpio_out()
-        // HSC mask all alerts:  SMBus write-word 0xd8 <= 0xffff
-        // HSC clear faults:      SMBus send-byte  0x03
+        // Source: HSC mask-alert + clear-faults loop in
+        // bmc_set_initial_gpio_out() HSC mask all alerts:  SMBus write-word
+        // 0xd8 <= 0xffff HSC clear faults:      SMBus send-byte  0x03
         static constexpr uint8_t hsc_addrs[] = {0x10, 0x12, 0x14, 0x16};
         for (uint8_t addr : hsc_addrs)
         {
@@ -111,8 +110,8 @@ int init_vr_nvl_bmc()
 
         // Source: bmc_set_initial_gpio_out() in bmc_ready.sh
         gpio::set("BF3_AOC_NCSI_PRSNT_L-I", 0);
-        gpio::set("MUX_I2C_ESPI_SEL-O",      0);
-        gpio::set("EEDO_LED2-O",              1);
+        gpio::set("MUX_I2C_ESPI_SEL-O", 0);
+        gpio::set("EEDO_LED2-O", 1);
     }
 
     // Source: PDB IOX bind block in bmc_ready.sh (main), line ~569
@@ -121,18 +120,21 @@ int init_vr_nvl_bmc()
     // Source: PDB IOX bind block in bmc_ready.sh (main), line ~580
     iox_bind(9, 0x75);
 
-    // Source: `set_gpio_level "PDB_12V_EN_N_R-O" $HIGH; sleep 1` in bmc_ready.sh
+    // Source: `set_gpio_level "PDB_12V_EN_N_R-O" $HIGH; sleep 1` in
+    // bmc_ready.sh
     gpio::set("PDB_12V_EN_N_R-O", 1);
     std::this_thread::sleep_for(std::chrono::seconds{1});
 
     {
         gpio::Event stby_pg("STBY_POWER_PG-I", 1);
 
-        // Source: `if [ -d .../9-0020 ]; then set_gpio_level "STBY_POWER_EN-O" $HIGH`
+        // Source: `if [ -d .../9-0020 ]; then set_gpio_level "STBY_POWER_EN-O"
+        // $HIGH`
         //         in bmc_ready.sh
         if (iox_present(9, 0x20))
         {
-            std::cerr << "vr-nvl-bmc: PDB IOX 9-0020 present — asserting STBY_POWER_EN-O\n";
+            std::cerr
+                << "vr-nvl-bmc: PDB IOX 9-0020 present — asserting STBY_POWER_EN-O\n";
             gpio::set("STBY_POWER_EN-O", 1);
         }
 
@@ -153,13 +155,15 @@ int init_vr_nvl_bmc()
         // Source: `set_gpio_level "PDB_12V_EN_N_R-O" $LOW` in bmc_ready.sh
         gpio::set("PDB_12V_EN_N_R-O", 0);
 
-        // Source: `if [ -d .../9-0020 ]; then wait_standby_pwr "PDB"` in bmc_ready.sh
+        // Source: `if [ -d .../9-0020 ]; then wait_standby_pwr "PDB"` in
+        // bmc_ready.sh
         if (iox_present(9, 0x20))
         {
             std::cerr << "vr-nvl-bmc: waiting for PDB STBY_PWR_OK-I\n";
             if (pdb_pg.wait() != gpio::EventResult::Asserted)
             {
-                std::cerr << "vr-nvl-bmc: FATAL: STBY_PWR_OK-I (PDB standby) timeout\n";
+                std::cerr
+                    << "vr-nvl-bmc: FATAL: STBY_PWR_OK-I (PDB standby) timeout\n";
                 return EXIT_FAILURE;
             }
         }
@@ -168,9 +172,10 @@ int init_vr_nvl_bmc()
     // MOD1_B2B_CABLE_PRESENT_L-I and MOD1_CLINK_CABLE_PRESENT_L-I are on
     // PDB IOX (9-0020, now bound). Both are active-low: 0 = cable present.
     // B1_M0 is considered present if either cable is connected.
-    // Source: multi_module_detection.sh MODULE_B2B_GPIO_ARR / MODULE_CLINK_GPIO_ARR
-    const bool b1_present = (gpio::get("MOD1_B2B_CABLE_PRESENT_L-I")   == 0)
-                          || (gpio::get("MOD1_CLINK_CABLE_PRESENT_L-I") == 0);
+    // Source: multi_module_detection.sh MODULE_B2B_GPIO_ARR /
+    // MODULE_CLINK_GPIO_ARR
+    const bool b1_present = (gpio::get("MOD1_B2B_CABLE_PRESENT_L-I") == 0) ||
+                            (gpio::get("MOD1_CLINK_CABLE_PRESENT_L-I") == 0);
     std::cerr << std::format("vr-nvl-bmc: B1_M0 module {} detected\n",
                              b1_present ? "" : "NOT");
 
@@ -220,7 +225,8 @@ int init_vr_nvl_bmc()
     }
     else
     {
-        std::cerr << "vr-nvl-bmc: B1_M0 not present — skipping IOX 7-0020 wait\n";
+        std::cerr
+            << "vr-nvl-bmc: B1_M0 not present — skipping IOX 7-0020 wait\n";
     }
 
     // Source: `set_gpio_level "USB_MUX_EN-O" $HIGH` in bmc_ready.sh
@@ -234,68 +240,81 @@ int init_vr_nvl_bmc()
     // using `gpioset -m exit` — set-and-release, never held.
     // x86-power-control owns these signals and sets identical safe defaults
     // ("Setting GPIOs to default state for host state OFF") on startup.
-    // Platform-init must not touch them — holding them blocks x86-power-control.
+    // Platform-init must not touch them — holding them blocks
+    // x86-power-control.
 
-    // Source: `if [ -d .../2-0020 ]; then wait_standby_pwr "B0_M0"` in bmc_ready.sh
+    // Source: `if [ -d .../2-0020 ]; then wait_standby_pwr "B0_M0"` in
+    // bmc_ready.sh
     if (iox_present(2, 0x20))
     {
         std::cerr << "vr-nvl-bmc: waiting for B0_M0_STBY_POWER_PG-I\n";
-        if (!wait_gpio_high("B0_M0_STBY_POWER_PG-I", 200, std::chrono::milliseconds{100}))
+        if (!wait_gpio_high("B0_M0_STBY_POWER_PG-I", 200,
+                            std::chrono::milliseconds{100}))
         {
             std::cerr << "vr-nvl-bmc: FATAL: B0_M0_STBY_POWER_PG-I timeout\n";
             return EXIT_FAILURE;
         }
     }
 
-    // Source: `if [ -d .../7-0020 ]; then wait_standby_pwr "B1_M0"` in bmc_ready.sh
+    // Source: `if [ -d .../7-0020 ]; then wait_standby_pwr "B1_M0"` in
+    // bmc_ready.sh
     if (iox_present(7, 0x20))
     {
         std::cerr << "vr-nvl-bmc: waiting for B1_M0_STBY_POWER_PG-I\n";
-        if (!wait_gpio_high("B1_M0_STBY_POWER_PG-I", 200, std::chrono::milliseconds{100}))
+        if (!wait_gpio_high("B1_M0_STBY_POWER_PG-I", 200,
+                            std::chrono::milliseconds{100}))
         {
             std::cerr << "vr-nvl-bmc: FATAL: B1_M0_STBY_POWER_PG-I timeout\n";
             return EXIT_FAILURE;
         }
     }
 
-    // Source: `if [ -d .../2-0020 ]; then wait_gpio_assert "B0_M0_HPM_MCU_OK-I" 100 0.1`
+    // Source: `if [ -d .../2-0020 ]; then wait_gpio_assert "B0_M0_HPM_MCU_OK-I"
+    // 100 0.1`
     //         in bmc_ready.sh
     if (iox_present(2, 0x20))
     {
-        if (!wait_gpio_high("B0_M0_HPM_MCU_OK-I", 100, std::chrono::milliseconds{100}))
+        if (!wait_gpio_high("B0_M0_HPM_MCU_OK-I", 100,
+                            std::chrono::milliseconds{100}))
         {
             std::cerr << "vr-nvl-bmc: FATAL: B0_M0_HPM_MCU_OK-I timeout\n";
             return EXIT_FAILURE;
         }
     }
 
-    // Source: `if [ -d .../7-0020 ]; then wait_gpio_assert "B1_M0_HPM_MCU_OK-I" 100 0.1`
+    // Source: `if [ -d .../7-0020 ]; then wait_gpio_assert "B1_M0_HPM_MCU_OK-I"
+    // 100 0.1`
     //         in bmc_ready.sh
     if (iox_present(7, 0x20))
     {
-        if (!wait_gpio_high("B1_M0_HPM_MCU_OK-I", 100, std::chrono::milliseconds{100}))
+        if (!wait_gpio_high("B1_M0_HPM_MCU_OK-I", 100,
+                            std::chrono::milliseconds{100}))
         {
             std::cerr << "vr-nvl-bmc: FATAL: B1_M0_HPM_MCU_OK-I timeout\n";
             return EXIT_FAILURE;
         }
     }
 
-    // Source: `if [ -d .../2-0020 ]; then wait_gpio_assert "B0_M0_CPLD_READY-I" 100 0.1`
+    // Source: `if [ -d .../2-0020 ]; then wait_gpio_assert "B0_M0_CPLD_READY-I"
+    // 100 0.1`
     //         in bmc_ready.sh, exit 1 on failure
     if (iox_present(2, 0x20))
     {
-        if (!wait_gpio_high("B0_M0_CPLD_READY-I", 100, std::chrono::milliseconds{100}))
+        if (!wait_gpio_high("B0_M0_CPLD_READY-I", 100,
+                            std::chrono::milliseconds{100}))
         {
             std::cerr << "vr-nvl-bmc: FATAL: B0_M0_CPLD_READY-I timeout\n";
             return EXIT_FAILURE;
         }
     }
 
-    // Source: `if [ -d .../7-0020 ]; then wait_gpio_assert "B1_M0_CPLD_READY-I" 100 0.1`
+    // Source: `if [ -d .../7-0020 ]; then wait_gpio_assert "B1_M0_CPLD_READY-I"
+    // 100 0.1`
     //         in bmc_ready.sh, exit 1 on failure
     if (iox_present(7, 0x20))
     {
-        if (!wait_gpio_high("B1_M0_CPLD_READY-I", 100, std::chrono::milliseconds{100}))
+        if (!wait_gpio_high("B1_M0_CPLD_READY-I", 100,
+                            std::chrono::milliseconds{100}))
         {
             std::cerr << "vr-nvl-bmc: FATAL: B1_M0_CPLD_READY-I timeout\n";
             return EXIT_FAILURE;
@@ -325,8 +344,9 @@ int init_vr_nvl_bmc()
 
     // Replaces emmc-partition-format.sh mount logic.
     // Idempotent: skips already-mounted partitions; formats only on first boot
-    // when a partition has no ext4 superblock.  Mount table mirrors emmc-mount.conf
-    // (now removed from the image — emmc_format_and_mount is the single source).
+    // when a partition has no ext4 superblock.  Mount table mirrors
+    // emmc-mount.conf (now removed from the image — emmc_format_and_mount is
+    // the single source).
     emmc_format_and_mount("mmcblk0");
 
     // Source: check_rw_filesystems() + check_rofs() in bmc_ready.sh
@@ -360,9 +380,11 @@ int init_vr_nvl_bmc()
             std::cerr << "vr-nvl-bmc: BMC_READY-O asserted via LED sysfs\n";
         }
         else
-            std::cerr << "vr-nvl-bmc: WARNING: BMC_READY-O LED sysfs not found\n";
+            std::cerr
+                << "vr-nvl-bmc: WARNING: BMC_READY-O LED sysfs not found\n";
     }
-    // GLOBAL_WP_BMC-O renamed to GLOBAL_WP-O in this DTS revision (gpiochip2 line 3)
+    // GLOBAL_WP_BMC-O renamed to GLOBAL_WP-O in this DTS revision (gpiochip2
+    // line 3)
     gpio::set("GLOBAL_WP-O", 0);
 
     sd_notify(0, "READY=1");

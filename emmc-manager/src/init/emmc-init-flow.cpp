@@ -8,8 +8,8 @@
 #include "emmc-uenv.h"
 #include "emmc-util.h"
 
-#include <cerrno>
 #include <cctype>
+#include <cerrno>
 #include <cstring>
 #include <filesystem>
 #include <format>
@@ -29,14 +29,14 @@ bool hasEnvToken(std::string_view value, std::string_view token)
     std::size_t pos = 0;
     while (pos < value.size())
     {
-        while (pos < value.size()
-               && std::isspace(static_cast<unsigned char>(value[pos])) != 0)
+        while (pos < value.size() &&
+               std::isspace(static_cast<unsigned char>(value[pos])) != 0)
         {
             ++pos;
         }
         const std::size_t start = pos;
-        while (pos < value.size()
-               && std::isspace(static_cast<unsigned char>(value[pos])) == 0)
+        while (pos < value.size() &&
+               std::isspace(static_cast<unsigned char>(value[pos])) == 0)
         {
             ++pos;
         }
@@ -51,7 +51,7 @@ bool hasEnvToken(std::string_view value, std::string_view token)
 std::string partitionDeviceForMount(std::string_view device,
                                     std::string_view mount_point)
 {
-    for (auto const& p : emmc::layout::kPartitions)
+    for (const auto& p : emmc::layout::kPartitions)
     {
         if (p.mount != nullptr && std::string_view(p.mount) == mount_point)
         {
@@ -222,8 +222,7 @@ int formatUserLogsForCompleteReset(std::string_view device)
     if (!format::formatPartition(logdev))
     {
         std::cerr << std::format(
-            "nvidia-emmc-init: user log partition format failed: {}\n",
-            logdev);
+            "nvidia-emmc-init: user log partition format failed: {}\n", logdev);
         return kExitRwfsFormat;
     }
     return kExitOk;

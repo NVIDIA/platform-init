@@ -4,8 +4,9 @@
 // Platform initialization daemon for meta-vr-nvl-bmc (AST2700 / P3809 variant).
 // Replaces bmc_ready.sh. Functionally equivalent to init_vr_nvl_bmc() but with
 // AST2700 bus remapping: PDB 9→0, HMC bypass 1→10, B0_M0 2→11, B1_M0 7→8.
-// HSC also moves to bus 0. PDB standby GPIO is PWBY_PWR_OK-I (vs STBY_PWR_OK-I).
-// No BMC_READY-O, EEPROM init, NVMe CPLD probe, or post-ready ERoT checkout on AST2700.
+// HSC also moves to bus 0. PDB standby GPIO is PWBY_PWR_OK-I (vs
+// STBY_PWR_OK-I). No BMC_READY-O, EEPROM init, NVMe CPLD probe, or post-ready
+// ERoT checkout on AST2700.
 
 #include "platform_utils.hpp"
 #include "utilities.hpp"
@@ -26,10 +27,12 @@ int init_vr_nvl_bmc_ast2700()
 
     // Source: standby_power_wait.sh (AST2700 variant)
     // AST2700: BRD0 HMC-bypass IOX = bus 10, BRD1 = bus 8 (AST2600: buses 1/7)
-    std::cerr << "vr-nvl-bmc-ast2700: waiting for BRD0 standby power (bus 10)\n";
+    std::cerr
+        << "vr-nvl-bmc-ast2700: waiting for BRD0 standby power (bus 10)\n";
     if (iox_wait(10, 0x20, std::chrono::seconds{600}))
     {
-        std::cerr << "vr-nvl-bmc-ast2700: BRD0 standby power up, binding HMC bypass IOX\n";
+        std::cerr
+            << "vr-nvl-bmc-ast2700: BRD0 standby power up, binding HMC bypass IOX\n";
         iox_bind(10, 0x20);
         iox_bind(10, 0x21);
         if (iox_wait(8, 0x20, std::chrono::seconds{10}))
@@ -38,16 +41,19 @@ int init_vr_nvl_bmc_ast2700()
             iox_bind(8, 0x21);
         }
         else
-            std::cerr << "vr-nvl-bmc-ast2700: BRD1 not present (single-board)\n";
+            std::cerr
+                << "vr-nvl-bmc-ast2700: BRD1 not present (single-board)\n";
     }
     else
-        std::cerr << "vr-nvl-bmc-ast2700: BRD0 standby power timeout — continuing\n";
+        std::cerr
+            << "vr-nvl-bmc-ast2700: BRD0 standby power timeout — continuing\n";
 
     // ── Initial delay ─────────────────────────────────────────────────────
     // Source: `sleep 60` at start of bmc_ready.sh
     // Workaround for observed timing issue with B0_M0_RUN_POWER_PG-I not
     // asserting when powerctrl.sh power_on runs.
-    std::cerr << "vr-nvl-bmc-ast2700: initial 60s delay (RUN_POWER_PG timing workaround)\n";
+    std::cerr
+        << "vr-nvl-bmc-ast2700: initial 60s delay (RUN_POWER_PG timing workaround)\n";
     std::this_thread::sleep_for(std::chrono::seconds{60});
 
     // Source: bmc_set_initial_gpio_out() in bmc_ready.sh, called when
@@ -56,10 +62,10 @@ int init_vr_nvl_bmc_ast2700()
     {
         gpio::set("GLOBAL_WP_BMC-O", 0);
 
-        // Source: HSC mask-alert + clear-faults loop in bmc_set_initial_gpio_out()
-        // hsc_bus=0 on AST2700 (was bus 9 on AST2600)
-        // HSC mask all alerts:  SMBus write-word 0xd8 <= 0xffff
-        // HSC clear faults:      SMBus send-byte  0x03
+        // Source: HSC mask-alert + clear-faults loop in
+        // bmc_set_initial_gpio_out() hsc_bus=0 on AST2700 (was bus 9 on
+        // AST2600) HSC mask all alerts:  SMBus write-word 0xd8 <= 0xffff HSC
+        // clear faults:      SMBus send-byte  0x03
         static constexpr uint8_t hsc_addrs[] = {0x10, 0x12, 0x14, 0x16};
         for (uint8_t addr : hsc_addrs)
         {
@@ -84,27 +90,32 @@ int init_vr_nvl_bmc_ast2700()
         }
 
         gpio::set("BF3_AOC_NCSI_PRSNT_L-I", 0);
-        gpio::set("MUX_I2C_ESPI_SEL-O",      0);
-        gpio::set("EEDO_LED2-O",              1);
+        gpio::set("MUX_I2C_ESPI_SEL-O", 0);
+        gpio::set("EEDO_LED2-O", 1);
     }
 
-    // Source: PDB IOX bind block in bmc_ready.sh (main); bus 0 on AST2700 (was 9)
+    // Source: PDB IOX bind block in bmc_ready.sh (main); bus 0 on AST2700 (was
+    // 9)
     iox_bind(0, 0x20);
 
-    // Source: PDB IOX bind block in bmc_ready.sh (main); bus 0 on AST2700 (was 9)
+    // Source: PDB IOX bind block in bmc_ready.sh (main); bus 0 on AST2700 (was
+    // 9)
     iox_bind(0, 0x75);
 
-    // Source: `set_gpio_level "PDB_12V_EN_N_R-O" $HIGH; sleep 1` in bmc_ready.sh
+    // Source: `set_gpio_level "PDB_12V_EN_N_R-O" $HIGH; sleep 1` in
+    // bmc_ready.sh
     gpio::set("PDB_12V_EN_N_R-O", 1);
     std::this_thread::sleep_for(std::chrono::seconds{1});
 
     {
         gpio::Event stby_pg("STBY_POWER_PG-I", 1);
 
-        // Source: `if [ -d .../0-0020 ]; then set_gpio_level "STBY_POWER_EN-O" $HIGH`
+        // Source: `if [ -d .../0-0020 ]; then set_gpio_level "STBY_POWER_EN-O"
+        // $HIGH`
         if (iox_present(0, 0x20))
         {
-            std::cerr << "vr-nvl-bmc-ast2700: PDB IOX 0-0020 present — asserting STBY_POWER_EN-O\n";
+            std::cerr
+                << "vr-nvl-bmc-ast2700: PDB IOX 0-0020 present — asserting STBY_POWER_EN-O\n";
             gpio::set("STBY_POWER_EN-O", 1);
         }
 
@@ -118,20 +129,24 @@ int init_vr_nvl_bmc_ast2700()
     } // releases STBY_POWER_PG-I so x86-power-control can claim it
 
     {
-        // NOTE: AST2700 PDB standby is PWBY_PWR_OK-I (was STBY_PWR_OK-I on AST2600)
+        // NOTE: AST2700 PDB standby is PWBY_PWR_OK-I (was STBY_PWR_OK-I on
+        // AST2600)
         gpio::Event pdb_pg("PWBY_PWR_OK-I", 1);
 
         // Source: `set_gpio_level "PDB_12V_EN_N_R-O" $LOW` in bmc_ready.sh
-        // NOTE: HMC_RST_R_L release is intentionally omitted — commented out in bmc_ready.sh
+        // NOTE: HMC_RST_R_L release is intentionally omitted — commented out in
+        // bmc_ready.sh
         gpio::set("PDB_12V_EN_N_R-O", 0);
 
-        // Source: `if [ -d .../0-0020 ]; then wait_standby_pwr "PDB"` in bmc_ready.sh
+        // Source: `if [ -d .../0-0020 ]; then wait_standby_pwr "PDB"` in
+        // bmc_ready.sh
         if (iox_present(0, 0x20))
         {
             std::cerr << "vr-nvl-bmc-ast2700: waiting for PDB PWBY_PWR_OK-I\n";
             if (pdb_pg.wait() != gpio::EventResult::Asserted)
             {
-                std::cerr << "vr-nvl-bmc-ast2700: FATAL: PWBY_PWR_OK-I (PDB standby) timeout\n";
+                std::cerr
+                    << "vr-nvl-bmc-ast2700: FATAL: PWBY_PWR_OK-I (PDB standby) timeout\n";
                 return EXIT_FAILURE;
             }
         }
@@ -182,64 +197,82 @@ int init_vr_nvl_bmc_ast2700()
     // Source: `set_gpio_level "BMC_MUX_PI3DP_SEL-O" $LOW` in bmc_ready.sh
     gpio::set("BMC_MUX_PI3DP_SEL-O", 0);
 
-    // Source: `if [ -d .../11-0020 ]; then wait_standby_pwr "B0_M0"` in bmc_ready.sh
+    // Source: `if [ -d .../11-0020 ]; then wait_standby_pwr "B0_M0"` in
+    // bmc_ready.sh
     if (iox_present(11, 0x20))
     {
         std::cerr << "vr-nvl-bmc-ast2700: waiting for B0_M0_STBY_POWER_PG-I\n";
-        if (!wait_gpio_high("B0_M0_STBY_POWER_PG-I", 200, std::chrono::milliseconds{100}))
+        if (!wait_gpio_high("B0_M0_STBY_POWER_PG-I", 200,
+                            std::chrono::milliseconds{100}))
         {
-            std::cerr << "vr-nvl-bmc-ast2700: FATAL: B0_M0_STBY_POWER_PG-I timeout\n";
+            std::cerr
+                << "vr-nvl-bmc-ast2700: FATAL: B0_M0_STBY_POWER_PG-I timeout\n";
             return EXIT_FAILURE;
         }
     }
 
-    // Source: `if [ -d .../8-0020 ]; then wait_standby_pwr "B1_M0"` in bmc_ready.sh
+    // Source: `if [ -d .../8-0020 ]; then wait_standby_pwr "B1_M0"` in
+    // bmc_ready.sh
     if (iox_present(8, 0x20))
     {
         std::cerr << "vr-nvl-bmc-ast2700: waiting for B1_M0_STBY_POWER_PG-I\n";
-        if (!wait_gpio_high("B1_M0_STBY_POWER_PG-I", 200, std::chrono::milliseconds{100}))
+        if (!wait_gpio_high("B1_M0_STBY_POWER_PG-I", 200,
+                            std::chrono::milliseconds{100}))
         {
-            std::cerr << "vr-nvl-bmc-ast2700: FATAL: B1_M0_STBY_POWER_PG-I timeout\n";
+            std::cerr
+                << "vr-nvl-bmc-ast2700: FATAL: B1_M0_STBY_POWER_PG-I timeout\n";
             return EXIT_FAILURE;
         }
     }
 
-    // Source: `if [ -d .../11-0020 ]; then wait_gpio_assert "B0_M0_HPM_MCU_OK-I" 100 0.1`
+    // Source: `if [ -d .../11-0020 ]; then wait_gpio_assert
+    // "B0_M0_HPM_MCU_OK-I" 100 0.1`
     if (iox_present(11, 0x20))
     {
-        if (!wait_gpio_high("B0_M0_HPM_MCU_OK-I", 100, std::chrono::milliseconds{100}))
+        if (!wait_gpio_high("B0_M0_HPM_MCU_OK-I", 100,
+                            std::chrono::milliseconds{100}))
         {
-            std::cerr << "vr-nvl-bmc-ast2700: FATAL: B0_M0_HPM_MCU_OK-I timeout\n";
+            std::cerr
+                << "vr-nvl-bmc-ast2700: FATAL: B0_M0_HPM_MCU_OK-I timeout\n";
             return EXIT_FAILURE;
         }
     }
 
-    // Source: `if [ -d .../8-0020 ]; then wait_gpio_assert "B1_M0_HPM_MCU_OK-I" 100 0.1`
+    // Source: `if [ -d .../8-0020 ]; then wait_gpio_assert "B1_M0_HPM_MCU_OK-I"
+    // 100 0.1`
     if (iox_present(8, 0x20))
     {
-        if (!wait_gpio_high("B1_M0_HPM_MCU_OK-I", 100, std::chrono::milliseconds{100}))
+        if (!wait_gpio_high("B1_M0_HPM_MCU_OK-I", 100,
+                            std::chrono::milliseconds{100}))
         {
-            std::cerr << "vr-nvl-bmc-ast2700: FATAL: B1_M0_HPM_MCU_OK-I timeout\n";
+            std::cerr
+                << "vr-nvl-bmc-ast2700: FATAL: B1_M0_HPM_MCU_OK-I timeout\n";
             return EXIT_FAILURE;
         }
     }
 
-    // Source: `if [ -d .../11-0020 ]; then wait_gpio_assert "B0_M0_CPLD_READY-I" 100 0.1`
+    // Source: `if [ -d .../11-0020 ]; then wait_gpio_assert
+    // "B0_M0_CPLD_READY-I" 100 0.1`
     if (iox_present(11, 0x20))
     {
-        if (!wait_gpio_high("B0_M0_CPLD_READY-I", 100, std::chrono::milliseconds{100}))
+        if (!wait_gpio_high("B0_M0_CPLD_READY-I", 100,
+                            std::chrono::milliseconds{100}))
         {
-            std::cerr << "vr-nvl-bmc-ast2700: FATAL: B0_M0_CPLD_READY-I timeout\n";
+            std::cerr
+                << "vr-nvl-bmc-ast2700: FATAL: B0_M0_CPLD_READY-I timeout\n";
             return EXIT_FAILURE;
         }
     }
 
-    // Source: `if [ -d .../8-0020 ]; then wait_gpio_assert "B1_M0_CPLD_READY-I" 100 0.1`
+    // Source: `if [ -d .../8-0020 ]; then wait_gpio_assert "B1_M0_CPLD_READY-I"
+    // 100 0.1`
     if (iox_present(8, 0x20))
     {
-        if (!wait_gpio_high("B1_M0_CPLD_READY-I", 100, std::chrono::milliseconds{100}))
+        if (!wait_gpio_high("B1_M0_CPLD_READY-I", 100,
+                            std::chrono::milliseconds{100}))
         {
-            std::cerr << "vr-nvl-bmc-ast2700: FATAL: B1_M0_CPLD_READY-I timeout\n";
+            std::cerr
+                << "vr-nvl-bmc-ast2700: FATAL: B1_M0_CPLD_READY-I timeout\n";
             return EXIT_FAILURE;
         }
     }

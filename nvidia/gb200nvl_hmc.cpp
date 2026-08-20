@@ -41,16 +41,15 @@ static void hmc_fru_check()
 {
     constexpr const char* eeprom_sysfs =
         "/sys/bus/i2c/devices/i2c-3/3-0057/eeprom";
-    constexpr const char* fru_dir  = "/etc/fru";
+    constexpr const char* fru_dir = "/etc/fru";
     constexpr const char* fru_file = "/etc/fru/baseboard.fru.bin";
 
     std::error_code ec;
     std::filesystem::create_directories(fru_dir, ec);
     if (ec)
     {
-        std::cerr << std::format(
-            "gb200nvl-hmc: fru_check: mkdir {}: {}\n",
-            fru_dir, ec.message());
+        std::cerr << std::format("gb200nvl-hmc: fru_check: mkdir {}: {}\n",
+                                 fru_dir, ec.message());
         return;
     }
 
@@ -115,19 +114,17 @@ static void hmc_fru_check()
 static void discover_modules()
 {
     // One entry per possible secondary module; extend both arrays together.
-    static constexpr std::array<const char*, 1> b2b_gpios{{
-        "MOD1_B2B_CABLE_PRESENT_L-I"
-    }};
-    static constexpr std::array<const char*, 1> clink_gpios{{
-        "MOD1_CLINK_CABLE_PRESENT_L-I"
-    }};
+    static constexpr std::array<const char*, 1> b2b_gpios{
+        {"MOD1_B2B_CABLE_PRESENT_L-I"}};
+    static constexpr std::array<const char*, 1> clink_gpios{
+        {"MOD1_CLINK_CABLE_PRESENT_L-I"}};
     static constexpr const char* prsnt_file = "/etc/default/MODULE_PRSNT_ARR";
     static constexpr const char* count_file = "/etc/default/N_MODULES";
 
     std::vector<int> present;
     for (std::size_t i = 0; i < b2b_gpios.size(); ++i)
     {
-        int b2b   = gpio::get(b2b_gpios[i]);
+        int b2b = gpio::get(b2b_gpios[i]);
         int clink = gpio::get(clink_gpios[i]);
         if (b2b < 0 || clink < 0)
         {
@@ -139,11 +136,13 @@ static void discover_modules()
         if ((b2b | clink) == 0)
         {
             present.push_back(static_cast<int>(i));
-            std::cerr << std::format("gb200nvl-hmc: module {} connected\n", i + 1);
+            std::cerr << std::format("gb200nvl-hmc: module {} connected\n",
+                                     i + 1);
         }
         else
         {
-            std::cerr << std::format("gb200nvl-hmc: module {} not connected\n", i + 1);
+            std::cerr << std::format("gb200nvl-hmc: module {} not connected\n",
+                                     i + 1);
         }
     }
 
@@ -151,7 +150,8 @@ static void discover_modules()
     {
         for (std::size_t i = 0; i < present.size(); ++i)
         {
-            if (i) f << ' ';
+            if (i)
+                f << ' ';
             f << present[i];
         }
         f << '\n';
@@ -159,8 +159,8 @@ static void discover_modules()
     if (std::ofstream f{count_file}; f)
         f << present.size() << '\n';
 
-    std::cerr << std::format(
-        "gb200nvl-hmc: {} secondary module(s) present\n", present.size());
+    std::cerr << std::format("gb200nvl-hmc: {} secondary module(s) present\n",
+                             present.size());
 }
 
 // Source: fpga_power_sequence.sh execute_hmc_cpld_reset()
@@ -215,8 +215,8 @@ int init_gb200nvl_hmc()
         }
         catch (const std::exception& e)
         {
-            std::cerr << std::format(
-                "gb200nvl-hmc: backdrive: {} (ignored)\n", e.what());
+            std::cerr << std::format("gb200nvl-hmc: backdrive: {} (ignored)\n",
+                                     e.what());
         }
     }
 

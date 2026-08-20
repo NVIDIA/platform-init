@@ -1,0 +1,6 @@
+[codespell]
+# "ist" is the /var/emmc/ist partition (In-System Test), not a typo of "is"/
+# "list". It shows up whenever a commit message pastes `mount` or `fdisk`
+# output, which codespell then rejects. See emmc-manager/include/
+# emmc-layout-machine.h and nvidia/platform_utils.hpp for the layout.
+ignore-words-list = ist

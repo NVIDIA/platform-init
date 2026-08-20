@@ -60,10 +60,10 @@ void setupParams(struct ext2_super_block& param, uint64_t size_bytes,
     param.s_inode_size = kInodeSize;
     param.s_rev_level = EXT2_DYNAMIC_REV;
     param.s_feature_compat = EXT3_FEATURE_COMPAT_HAS_JOURNAL;
-    param.s_feature_incompat = EXT2_FEATURE_INCOMPAT_FILETYPE
-                               | EXT3_FEATURE_INCOMPAT_EXTENTS;
-    param.s_feature_ro_compat = EXT2_FEATURE_RO_COMPAT_SPARSE_SUPER
-                                | EXT2_FEATURE_RO_COMPAT_LARGE_FILE;
+    param.s_feature_incompat =
+        EXT2_FEATURE_INCOMPAT_FILETYPE | EXT3_FEATURE_INCOMPAT_EXTENTS;
+    param.s_feature_ro_compat =
+        EXT2_FEATURE_RO_COMPAT_SPARSE_SUPER | EXT2_FEATURE_RO_COMPAT_LARGE_FILE;
     param.s_blocks_count = static_cast<__u32>(size_bytes / block_bytes);
     param.s_first_data_block = 0;
 }
@@ -91,8 +91,7 @@ errcode_t zeroAndReserveInodes(ext2_filsys fs, std::string_view dev_z)
     }
     for (ext2_ino_t i = 1; i < EXT2_FIRST_INODE(fs->super); ++i)
     {
-        rc = ext2fs_write_inode_full(fs, i, zeroed,
-                                     EXT2_INODE_SIZE(fs->super));
+        rc = ext2fs_write_inode_full(fs, i, zeroed, EXT2_INODE_SIZE(fs->super));
         if (rc != 0)
         {
             std::cerr << std::format(
@@ -114,8 +113,7 @@ errcode_t zeroAndReserveInodes(ext2_filsys fs, std::string_view dev_z)
 // default journal size (e.g. p6 = 1 MiB).
 errcode_t addJournalOrSkip(ext2_filsys fs, std::string_view dev_z)
 {
-    int journal_blocks =
-        ext2fs_default_journal_size(fs->super->s_blocks_count);
+    int journal_blocks = ext2fs_default_journal_size(fs->super->s_blocks_count);
     if (journal_blocks <= 0)
     {
         std::cerr << std::format(
@@ -164,9 +162,9 @@ bool runFormat(std::string_view dev)
     setupParams(param, geo->size_bytes, block_bytes);
 
     ext2_filsys fs = nullptr;
-    errcode_t rc = ext2fs_initialize(
-        dev_z.c_str(), EXT2_FLAG_EXCLUSIVE | EXT2_FLAG_RW, &param,
-        unix_io_manager, &fs);
+    errcode_t rc =
+        ext2fs_initialize(dev_z.c_str(), EXT2_FLAG_EXCLUSIVE | EXT2_FLAG_RW,
+                          &param, unix_io_manager, &fs);
     if (rc != 0)
     {
         std::cerr << std::format(
@@ -283,8 +281,8 @@ bool validateExt4OrRecover(std::string_view dev)
         }
     }
     std::cerr << std::format(
-        "emmc-format: validateExt4OrRecover({}) — unrecoverable: {}\n",
-        dev_z, fmtRc(rc));
+        "emmc-format: validateExt4OrRecover({}) — unrecoverable: {}\n", dev_z,
+        fmtRc(rc));
     return false;
 }
 
@@ -334,9 +332,8 @@ bool mountFs(std::string_view dev, std::string_view mount_point)
     std::string mp_z(mount_point);
     if (::mount(dev_z.c_str(), mp_z.c_str(), "ext4", 0, nullptr) != 0)
     {
-        std::cerr << std::format(
-            "emmc-format: mount({} -> {}) failed: {}\n", dev_z, mp_z,
-            std::strerror(errno));
+        std::cerr << std::format("emmc-format: mount({} -> {}) failed: {}\n",
+                                 dev_z, mp_z, std::strerror(errno));
         return false;
     }
     if (!isMounted(mount_point))

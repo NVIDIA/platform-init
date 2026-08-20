@@ -13,10 +13,11 @@
  * Unlike the shell version the counter is kept in memory (no tmp file).
  */
 
-#include <sdbusplus/bus.hpp>
-#include <sdbusplus/message.hpp>
 #include <systemd/sd-daemon.h>
 #include <systemd/sd-event.h>
+
+#include <sdbusplus/bus.hpp>
+#include <sdbusplus/message.hpp>
 
 #include <cstdint>
 #include <iostream>

@@ -22,11 +22,12 @@ struct EmmcPart
         Logical,
     };
 
-    int num;             // partition number (1-based, gaps allowed)
+    int num;               // partition number (1-based, gaps allowed)
     Type type;
     std::uint64_t sectors; // 0 for Extended (fills remainder)
-    const char* mount;   // nullptr for rwfs / Extended
-    const char* purpose; // "rwfs" for the initramfs-owned partition; else nullptr
+    const char* mount;     // nullptr for rwfs / Extended
+    const char*
+        purpose; // "rwfs" for the initramfs-owned partition; else nullptr
 };
 
 } // namespace emmc::layout

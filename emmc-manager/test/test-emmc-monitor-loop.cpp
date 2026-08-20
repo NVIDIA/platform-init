@@ -4,9 +4,9 @@
 #include "emmc-config.h"
 #include "emmc-monitor.h"
 
-#include <gtest/gtest.h>
-
 #include <string_view>
+
+#include <gtest/gtest.h>
 
 TEST(EmmcMonitorLoop, DefaultLayoutHasExpectedMounts)
 {
@@ -21,7 +21,7 @@ TEST(EmmcMonitorLoop, DefaultLayoutHasExpectedMounts)
 
     int mounted_count = 0;
     int rwfs_count = 0;
-    for (auto const& p : kPartitions)
+    for (const auto& p : kPartitions)
     {
         if (p.mount != nullptr)
         {

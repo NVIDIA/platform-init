@@ -72,8 +72,8 @@ void emitResourceWarningThresholdExceeded(std::string_view args)
 
 void emitResourceErrorsCorrected(std::string_view args)
 {
-    emit("ResourceEvent.1.0.ResourceErrorsCorrected",
-         Severity::Informational, args);
+    emit("ResourceEvent.1.0.ResourceErrorsCorrected", Severity::Informational,
+         args);
 }
 
 void emitBmcRebootReason(std::string_view args)

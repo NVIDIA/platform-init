@@ -46,6 +46,10 @@
 #      hwclock would for the read itself, just without hwclock's tick-wait
 #      synchronization that is what's actually timing out.
 #
+# `local` is not in POSIX sh, but this only ever runs under the initramfs
+# BusyBox ash, which implements it. Suppress SC3043 file-wide rather than
+# leaking every helper's scratch variables into the global scope.
+# shellcheck disable=SC3043
 
 I2C_BUS=9
 RTC_EXT_RETRIES=3
@@ -102,10 +106,9 @@ get_fw_env_var() {
     envdev=$(findmtd u-boot-env)
     [ -z "$envdev" ] && return 1
     copies=2
-    cat /dev/"$envdev" 2>/dev/null |
-        tr '\n\000' '\r\n' |
-        tail -c +5 | tail -c +${copies-1} |
-        sed -ne '/^$/,$d' -e "s/^$1=//p"
+    tr '\n\000' '\r\n' 2>/dev/null < /dev/"$envdev" |
+    tail -c +5 | tail -c +${copies-1} |
+    sed -ne '/^$/,$d' -e "s/^$1=//p"
 }
 
 # Get BRD0 power GPIO: 0 = host down (safe to use external RTC), 1 = host up (internal only), 2 = unknown
@@ -122,8 +125,10 @@ get_brd0_power_gpio() {
         log "BRD0 power GPIO: ${BRD0_POWER_GPIO_NAME} not found (e.g. CP2112 not enumerated yet)"
         return 2
     fi
-    gpio_state=$(gpioget ${gpio_line} 2>/dev/null)
-    if [ $? -ne 0 ]; then
+    # gpiofind prints "<gpiochip> <offset>" as two words, which gpioget expects
+    # as two arguments - the word splitting here is deliberate.
+    # shellcheck disable=SC2086
+    if ! gpio_state=$(gpioget ${gpio_line} 2>/dev/null); then
         log "BRD0 power GPIO: read failed for ${BRD0_POWER_GPIO_NAME}"
         return 2
     fi
@@ -215,13 +220,32 @@ bind_rtc_driver() {
         return 1
     fi
     log "Binding ${RTC_DEVICE} to ${I2C_ADDR} on bus ${I2C_BUS}..."
-    echo "${RTC_DEVICE} ${I2C_ADDR}" > "${I2C_DEV_PATH}/new_device" 2>/dev/null
-    if [ $? -ne 0 ]; then
+    if ! echo "${RTC_DEVICE} ${I2C_ADDR}" > "${I2C_DEV_PATH}/new_device" 2>/dev/null; then
         log "ERROR - Failed to bind driver"
         return 1
     fi
     sleep 1
-    RTC_DEV=$(ls -1t /sys/class/rtc/ 2>/dev/null | grep -v "^rtc0$" | head -n 1)
+    # Pick the newest non-rtc0 entry - the external RTC we just bound. RTC
+    # indices are handed out in registration order, so the highest-numbered
+    # entry is the most recent; iterate a glob rather than parsing `ls`.
+    # Compare the suffix numerically: glob order is lexicographic, which
+    # would rank rtc9 above rtc10.
+    RTC_DEV=""
+    rtc_max=-1
+    for rtc_entry in /sys/class/rtc/rtc*; do
+        [ -d "$rtc_entry" ] || continue
+        rtc_entry="${rtc_entry##*/}"
+        rtc_idx="${rtc_entry#rtc}"
+        # Skip rtc0 (on-SoC) and anything without a plain numeric suffix.
+        [ "$rtc_idx" = "0" ] && continue
+        case "$rtc_idx" in
+            '' | *[!0-9]*) continue ;;
+        esac
+        if [ "$rtc_idx" -gt "$rtc_max" ]; then
+            rtc_max="$rtc_idx"
+            RTC_DEV="$rtc_entry"
+        fi
+    done
     if [ -z "$RTC_DEV" ]; then
         log "ERROR - No RTC device found after bind"
         return 1
@@ -298,7 +322,12 @@ unbind_rtc_driver() {
 # linux hwclock); if sysfs fails too, the kernel driver itself is the culprit.
 log_internal_rtc_state() {
     local prefix="${1:-rtc state}"
-    log "  ${prefix}: /sys/class/rtc entries: $(ls /sys/class/rtc/ 2>/dev/null | tr '\n' ' ')"
+    local rtc_entries=""
+    for rtc_entry in /sys/class/rtc/*; do
+        [ -e "$rtc_entry" ] || continue
+        rtc_entries="${rtc_entries}${rtc_entry##*/} "
+    done
+    log "  ${prefix}: /sys/class/rtc entries: ${rtc_entries}"
     if [ -d /sys/class/rtc/rtc0 ]; then
         log "  ${prefix}: rtc0 name: $(cat /sys/class/rtc/rtc0/name 2>/dev/null || echo '<unreadable>')"
         log "  ${prefix}: rtc0 hctosys: $(cat /sys/class/rtc/rtc0/hctosys 2>/dev/null || echo '<unreadable>')"
@@ -306,6 +335,9 @@ log_internal_rtc_state() {
         log "  ${prefix}: rtc0 date+time (sysfs): $(cat /sys/class/rtc/rtc0/date 2>/dev/null || echo '<unreadable>') $(cat /sys/class/rtc/rtc0/time 2>/dev/null || echo '<unreadable>')"
     fi
     # Single line; tr collapses ls's multi-line output so it stays one log entry.
+    # `ls -la` is wanted here for the mode/major:minor of the device nodes, which
+    # a glob can't give us; /dev/rtc* names are kernel-generated and safe.
+    # shellcheck disable=SC2012
     log "  ${prefix}: /dev/rtc* nodes: $(ls -la /dev/rtc* 2>&1 | tr '\n' '|')"
 }
 

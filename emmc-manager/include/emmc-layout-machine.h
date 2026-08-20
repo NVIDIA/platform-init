@@ -19,13 +19,18 @@ namespace emmc::layout
 inline constexpr const char* kSdhciControllerName = "12090100.sdhci";
 
 inline constexpr std::array<EmmcPart, 7> kPartitions{{
-    {1, EmmcPart::Type::Primary,    64ULL * kSectorsPerMiB,  nullptr,                "rwfs"},
-    {2, EmmcPart::Type::Primary,  2048ULL * kSectorsPerMiB, "/var/emmc/fdr",        nullptr},
-    {3, EmmcPart::Type::Primary,  1024ULL * kSectorsPerMiB, "/var/emmc/user-logs",  nullptr},
-    {4, EmmcPart::Type::Extended,        0,                  nullptr,                nullptr},
-    {5, EmmcPart::Type::Logical,  2048ULL * kSectorsPerMiB, "/var/emmc/ist",        nullptr},
-    {6, EmmcPart::Type::Logical,     1ULL * kSectorsPerMiB, "/var/emmc/uboot-env",  nullptr},
-    {7, EmmcPart::Type::Logical,  1900ULL * kSectorsPerMiB, "/var/emmc/misc",       nullptr},
+    {1, EmmcPart::Type::Primary, 64ULL * kSectorsPerMiB, nullptr, "rwfs"},
+    {2, EmmcPart::Type::Primary, 2048ULL * kSectorsPerMiB, "/var/emmc/fdr",
+     nullptr},
+    {3, EmmcPart::Type::Primary, 1024ULL * kSectorsPerMiB,
+     "/var/emmc/user-logs", nullptr},
+    {4, EmmcPart::Type::Extended, 0, nullptr, nullptr},
+    {5, EmmcPart::Type::Logical, 2048ULL * kSectorsPerMiB, "/var/emmc/ist",
+     nullptr},
+    {6, EmmcPart::Type::Logical, 1ULL * kSectorsPerMiB, "/var/emmc/uboot-env",
+     nullptr},
+    {7, EmmcPart::Type::Logical, 1900ULL * kSectorsPerMiB, "/var/emmc/misc",
+     nullptr},
 }};
 
 inline constexpr unsigned int kSizeTolerancePercent = 2;

@@ -75,7 +75,7 @@ check_i2c_device() {
     # Pattern: space before hex digits or "UU" (device bound by driver)
     result=$(i2cdetect -y "$bus" "$addr" "$addr" 2>&1)
     log_debug "i2cdetect -y $bus $addr $addr output: $result"
-    
+
     # Match either hex address (unbound) or UU (driver bound)
     if echo "$result" | grep -qE " ([0-9a-f]{2}|UU)"; then
         log_debug "Device found at bus $bus addr $addr"
@@ -108,9 +108,10 @@ bind_i2c_device() {
     # Unbind first (ignore error if not bound) - ensures clean state
     echo "$addr_sysfs" > "/sys/bus/i2c/drivers/${dev_type}/unbind" 2>/dev/null
 
-    # Trigger driver bind - driver will re-read all DT properties
-    bind_result=$(echo "$addr_sysfs" > "/sys/bus/i2c/drivers/${dev_type}/bind" 2>&1)
-    if [ $? -eq 0 ]; then
+    # Trigger driver bind - driver will re-read all DT properties.
+    # The write itself is the command substitution's stdout, so redirect the
+    # group's stderr (the kernel's error string) into the capture instead.
+    if bind_result=$({ echo "$addr_sysfs" > "/sys/bus/i2c/drivers/${dev_type}/bind"; } 2>&1); then
         log "Successfully bound device $addr_sysfs"
         return 0
     else
@@ -140,20 +141,20 @@ wait_and_bind_board() {
     max_attempts="$6"
 
     log "Waiting for $board_name (bus $bus)..."
-    
+
     attempt=0
     while [ "$attempt" -lt "$max_attempts" ]; do
         attempt=$((attempt + 1))
 
         if check_i2c_device "$bus" "$iox0_addr"; then
             log "$board_name detected after $((attempt * POLL_INTERVAL))s"
-            
+
             # Trigger driver re-bind for both IO expanders (DT-defined devices)
             bind_i2c_device "$bus" "$iox0_addr" "pca953x"
             bind_i2c_device "$bus" "$iox1_addr" "pca953x"
             # Trigger driver re-bind for HPM FRU
             bind_i2c_device "$bus" "$hpm_fru_addr" "at24"
-            
+
             return 0
         fi
 
@@ -186,7 +187,7 @@ log "BRD1 (optional): bus $BRD1_BUS, timeout $((BRD1_MAX_ATTEMPTS * POLL_INTERVA
 # Wait for Board 0 (required)
 if wait_and_bind_board "BRD0" "$BRD0_BUS" "$BRD0_IOX0_ADDR" "$BRD0_IOX1_ADDR" "$BRD0_HPM_FRU_ADDR" "$BRD0_MAX_ATTEMPTS"; then
     log "BRD0 ready, checking for BRD1..."
-    
+
     # Board 0 is up, now check for Board 1 (optional, shorter timeout)
     if wait_and_bind_board "BRD1" "$BRD1_BUS" "$BRD1_IOX0_ADDR" "$BRD1_IOX1_ADDR" "$BRD1_HPM_FRU_ADDR" "$BRD1_MAX_ATTEMPTS"; then
         log "BRD1 ready"
@@ -194,7 +195,7 @@ if wait_and_bind_board "BRD0" "$BRD0_BUS" "$BRD0_IOX0_ADDR" "$BRD0_IOX1_ADDR" "$
         log "BRD1 not present (single-board configuration)"
         touch "$BRD1_NOT_PRESENT"
     fi
-    
+
     log "Standby power initialization complete"
 else
     # Board 0 timeout - this is a standby power failure

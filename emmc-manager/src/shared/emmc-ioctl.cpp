@@ -24,14 +24,14 @@
 // not in UAPI. Re-declare locally (same pattern as mmc-utils).
 #ifndef MMC_RSP_PRESENT
 #define MMC_RSP_PRESENT (1U << 0)
-#define MMC_RSP_136     (1U << 1)
-#define MMC_RSP_CRC     (1U << 2)
-#define MMC_RSP_BUSY    (1U << 3)
-#define MMC_RSP_OPCODE  (1U << 4)
-#define MMC_RSP_R1      (MMC_RSP_PRESENT | MMC_RSP_CRC | MMC_RSP_OPCODE)
-#define MMC_RSP_R1B \
+#define MMC_RSP_136 (1U << 1)
+#define MMC_RSP_CRC (1U << 2)
+#define MMC_RSP_BUSY (1U << 3)
+#define MMC_RSP_OPCODE (1U << 4)
+#define MMC_RSP_R1 (MMC_RSP_PRESENT | MMC_RSP_CRC | MMC_RSP_OPCODE)
+#define MMC_RSP_R1B                                                            \
     (MMC_RSP_PRESENT | MMC_RSP_CRC | MMC_RSP_OPCODE | MMC_RSP_BUSY)
-#define MMC_CMD_AC   (0U << 5)
+#define MMC_CMD_AC (0U << 5)
 #define MMC_CMD_ADTC (1U << 5)
 #endif
 
@@ -58,7 +58,10 @@ struct Fd
     }
     Fd(const Fd&) = delete;
     Fd& operator=(const Fd&) = delete;
-    Fd(Fd&& o) noexcept : fd(o.fd) { o.fd = -1; }
+    Fd(Fd&& o) noexcept : fd(o.fd)
+    {
+        o.fd = -1;
+    }
     Fd& operator=(Fd&&) = delete;
     int fd;
 };
@@ -114,8 +117,8 @@ bool triggerPartitionTableReread(std::string_view device)
     Fd h(::open(dev_z.c_str(), O_RDONLY | O_CLOEXEC));
     if (h.fd < 0)
     {
-        std::cerr << std::format(
-            "emmc-ioctl: open({}) for BLKRRPART failed\n", dev_z);
+        std::cerr << std::format("emmc-ioctl: open({}) for BLKRRPART failed\n",
+                                 dev_z);
         return false;
     }
     if (::ioctl(h.fd, BLKRRPART) != 0)
@@ -187,8 +190,8 @@ bool readExtCsd(std::string_view device, std::array<uint8_t, 512>& out)
     if (::ioctl(h.fd, MMC_IOC_CMD, &cmd) != 0)
     {
         std::cerr << std::format(
-            "emmc-ioctl: MMC_IOC_CMD MMC_SEND_EXT_CSD({}) failed: {}\n",
-            dev_z, std::strerror(errno));
+            "emmc-ioctl: MMC_IOC_CMD MMC_SEND_EXT_CSD({}) failed: {}\n", dev_z,
+            std::strerror(errno));
         return false;
     }
     return true;
@@ -207,10 +210,10 @@ bool writeExtCsdByte(std::string_view device, uint8_t index, uint8_t value)
     //   [25:24] access mode | [23:16] index | [15:8] value
     struct mmc_ioc_cmd cmd{};
     cmd.opcode = emmc::extcsd::kMmcSwitch;
-    cmd.arg = (static_cast<uint32_t>(emmc::extcsd::kSwitchModeWriteByte)
-               << 24U)
-              | (static_cast<uint32_t>(index) << 16U)
-              | (static_cast<uint32_t>(value) << 8U);
+    cmd.arg =
+        (static_cast<uint32_t>(emmc::extcsd::kSwitchModeWriteByte) << 24U) |
+        (static_cast<uint32_t>(index) << 16U) |
+        (static_cast<uint32_t>(value) << 8U);
     cmd.flags = MMC_RSP_R1B | MMC_CMD_AC;
     cmd.write_flag = 1;
 

@@ -75,16 +75,16 @@ bool copyBlockImage(std::string_view src, std::string_view dst)
     emmc::util::Fd sfd(::open(src_z.c_str(), O_RDONLY | O_CLOEXEC));
     if (!sfd)
     {
-        std::cerr << std::format("secure-erase: open({}) failed: {}\n",
-                                 src_z, std::strerror(errno));
+        std::cerr << std::format("secure-erase: open({}) failed: {}\n", src_z,
+                                 std::strerror(errno));
         return false;
     }
-    emmc::util::Fd dfd(::open(dst_z.c_str(),
-                              O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600));
+    emmc::util::Fd dfd(
+        ::open(dst_z.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600));
     if (!dfd)
     {
-        std::cerr << std::format("secure-erase: open({}) failed: {}\n",
-                                 dst_z, std::strerror(errno));
+        std::cerr << std::format("secure-erase: open({}) failed: {}\n", dst_z,
+                                 std::strerror(errno));
         return false;
     }
 
@@ -128,8 +128,8 @@ bool copyBlockImage(std::string_view src, std::string_view dst)
     }
     if (ok && ::fsync(dfd.get()) != 0)
     {
-        std::cerr << std::format("secure-erase: fsync({}) failed: {}\n",
-                                 dst_z, std::strerror(errno));
+        std::cerr << std::format("secure-erase: fsync({}) failed: {}\n", dst_z,
+                                 std::strerror(errno));
         ok = false;
     }
     // Fd destructors close sfd / dfd on scope exit.

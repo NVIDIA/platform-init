@@ -41,8 +41,7 @@ void triggerErase(const char* method, const char* uenv_key)
 EmmcDbusService::EmmcDbusService(sdbusplus::bus_t& bus, const char* path) :
     sdbusplus::server::object_t<
         sdbusplus::com::nvidia::Common::server::EmmcSecureErase,
-        sdbusplus::com::nvidia::Common::server::EmmcFullSecureErase>(bus,
-                                                                     path)
+        sdbusplus::com::nvidia::Common::server::EmmcFullSecureErase>(bus, path)
 {}
 
 void EmmcDbusService::emmcSecureErase()

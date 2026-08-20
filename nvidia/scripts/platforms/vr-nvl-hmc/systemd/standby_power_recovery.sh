@@ -85,19 +85,19 @@ echo "Polling every ${POLL_INTERVAL}s for BRD0 on bus $BRD0_BUS"
 while true; do
     if check_i2c_device "$BRD0_BUS" "$BRD0_IOX0_ADDR"; then
         echo "Standby power detected! BRD0 IO expander found at bus $BRD0_BUS addr $BRD0_IOX0_ADDR"
-        
+
         # Increment reboot counter before rebooting
         new_count=$(increment_reboot_counter)
         echo "Reboot loop count incremented to: $new_count"
-        
+
         echo "Initiating reboot for clean system state..."
-        
+
         # Give a moment for log to flush
         sleep 2
-        
+
         # Reboot the system
         reboot
-        
+
         # Should not reach here, but exit just in case
         exit 0
     fi

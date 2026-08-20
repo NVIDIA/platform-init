@@ -41,8 +41,9 @@ void auditPartitionLayout();
 bool reformatSinglePartition(std::string_view path);
 bool verifyEuda(std::string_view device);
 
- // Scheduled timer state used by the monitor binary's main().
- // Note: pointers are non-owning; caller retains ownership of event loop and bus.
+// Scheduled timer state used by the monitor binary's main().
+// Note: pointers are non-owning; caller retains ownership of event loop and
+// bus.
 struct MonitorContext
 {
     sd_event* event;
