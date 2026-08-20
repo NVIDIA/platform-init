@@ -15,12 +15,20 @@ namespace emmc::extcsd
 inline constexpr unsigned int kErase_Group_Def = 175;
 inline constexpr unsigned int kPartitioning_Support = 160;
 inline constexpr unsigned int kPartition_Setting_Completed = 155;
+inline constexpr unsigned int kPartitions_Attribute = 156;
 inline constexpr unsigned int kRst_n_Function = 162;
 inline constexpr uint8_t kRstNFunctionDisabledDefault =
     0x00;                                             // power-on default
 inline constexpr uint8_t kRstNFunctionEnabled = 0x01; // permanently enabled
 inline constexpr uint8_t kRstNFunctionPermDisabled =
     0x02;                                             // permanently disabled
+inline constexpr uint8_t kPartitionsAttributeEnhUsr =
+    static_cast<uint8_t>(1U << 0);
+inline constexpr uint8_t kEraseGroupDefHighCapacity = 0x01;
+inline constexpr unsigned int kEnh_Start_Addr_Lsb = 136;
+inline constexpr unsigned int kEnh_Start_Addr_Byte1 = 137;
+inline constexpr unsigned int kEnh_Start_Addr_Byte2 = 138;
+inline constexpr unsigned int kEnh_Start_Addr_Msb = 139;
 inline constexpr unsigned int kEnh_Size_Mult_Lsb = 140;
 inline constexpr unsigned int kEnh_Size_Mult_Mid = 141;
 inline constexpr unsigned int kEnh_Size_Mult_Msb = 142;
