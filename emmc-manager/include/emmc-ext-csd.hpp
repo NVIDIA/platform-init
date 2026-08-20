@@ -16,9 +16,11 @@ inline constexpr unsigned int kErase_Group_Def = 175;
 inline constexpr unsigned int kPartitioning_Support = 160;
 inline constexpr unsigned int kPartition_Setting_Completed = 155;
 inline constexpr unsigned int kRst_n_Function = 162;
-inline constexpr uint8_t kRstNFunctionDisabledDefault = 0x00; // power-on default
-inline constexpr uint8_t kRstNFunctionEnabled = 0x01;         // permanently enabled
-inline constexpr uint8_t kRstNFunctionPermDisabled = 0x02;    // permanently disabled
+inline constexpr uint8_t kRstNFunctionDisabledDefault =
+    0x00;                                             // power-on default
+inline constexpr uint8_t kRstNFunctionEnabled = 0x01; // permanently enabled
+inline constexpr uint8_t kRstNFunctionPermDisabled =
+    0x02;                                             // permanently disabled
 inline constexpr unsigned int kEnh_Size_Mult_Lsb = 140;
 inline constexpr unsigned int kEnh_Size_Mult_Mid = 141;
 inline constexpr unsigned int kEnh_Size_Mult_Msb = 142;

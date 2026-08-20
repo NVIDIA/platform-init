@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 NVIDIA
 
-#include "emmc-ext-csd.hpp"
 #include "emmc-init.h"
 #include "emmc-ioctl.h"
+
+#include "emmc-ext-csd.hpp"
 
 #include <gpiod.h>
 
@@ -82,7 +83,8 @@ bool ensureHwResetEnabled(std::string_view device)
     {
         std::cerr << std::format(
             "hwreset: RST_n_FUNCTION holds unexpected value 0x{:02x}; "
-            "not attempting to program\n", current);
+            "not attempting to program\n",
+            current);
         return false;
     }
 
@@ -107,7 +109,8 @@ bool ensureHwResetEnabled(std::string_view device)
     {
         std::cerr << std::format(
             "hwreset: RST_n_FUNCTION write reported success but readback is "
-            "0x{:02x} (expected 0x01)\n", after);
+            "0x{:02x} (expected 0x01)\n",
+            after);
         return false;
     }
     std::cerr << "hwreset: RST_n_FUNCTION now permanently enabled (0x01)\n";
@@ -150,8 +153,8 @@ bool pulseHwResetGpio()
         if (gpiod_line_set_value(line, 1) < 0)
         {
             std::cerr << std::format(
-                "hwreset: gpiod_line_set_value({}, 1) failed: {}\n",
-                found_name, std::strerror(errno));
+                "hwreset: gpiod_line_set_value({}, 1) failed: {}\n", found_name,
+                std::strerror(errno));
             ok = false;
         }
         else
@@ -166,8 +169,7 @@ bool pulseHwResetGpio()
     }
     if (ok)
     {
-        std::cerr << std::format("hwreset: toggled GPIO line {}\n",
-                                 found_name);
+        std::cerr << std::format("hwreset: toggled GPIO line {}\n", found_name);
     }
     return ok;
 }

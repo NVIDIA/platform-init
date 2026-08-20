@@ -51,11 +51,11 @@ constexpr uint8_t kChsSectors = 16; // 1..16
 #pragma pack(push, 1)
 struct MbrEntry
 {
-    uint8_t status;       // 0x00 / 0x80
+    uint8_t status;     // 0x00 / 0x80
     uint8_t chs_first[3];
-    uint8_t type;         // 0x83 Linux, 0x05 extended
+    uint8_t type;       // 0x83 Linux, 0x05 extended
     uint8_t chs_last[3];
-    uint32_t lba_first;   // little endian
+    uint32_t lba_first; // little endian
     uint32_t lba_count;
 };
 
@@ -132,7 +132,7 @@ bool createPartitions(std::string_view device, uint64_t total_sectors)
     const EmmcPart* extended = nullptr;
     std::size_t n_primary = 0;
     std::size_t n_logical = 0;
-    for (auto const& p : emmc::layout::kPartitions)
+    for (const auto& p : emmc::layout::kPartitions)
     {
         switch (p.type)
         {
@@ -166,7 +166,7 @@ bool createPartitions(std::string_view device, uint64_t total_sectors)
         base_name.remove_prefix(slash + 1);
     }
     bool all_present = true;
-    for (auto const& p : emmc::layout::kPartitions)
+    for (const auto& p : emmc::layout::kPartitions)
     {
         if (p.type == EmmcPart::Type::Extended)
         {
@@ -213,16 +213,16 @@ bool createPartitions(std::string_view device, uint64_t total_sectors)
     p_start[0] = kStartLba;
     for (std::size_t i = 1; i < n_primary; ++i)
     {
-        p_start[i] = p_start[i - 1]
-                     + static_cast<uint32_t>(primaries[i - 1]->sectors);
+        p_start[i] = p_start[i - 1] +
+                     static_cast<uint32_t>(primaries[i - 1]->sectors);
     }
 
     // Extended container starts after the last primary and fills the rest
     // of the disk. Required when any Logical exists (schema guarantees
     // exactly one Extended is present).
     const uint32_t ext_start =
-        p_start[n_primary - 1]
-        + static_cast<uint32_t>(primaries[n_primary - 1]->sectors);
+        p_start[n_primary - 1] +
+        static_cast<uint32_t>(primaries[n_primary - 1]->sectors);
     const uint32_t ext_size = static_cast<uint32_t>(total_sectors - ext_start);
 
     // Build the MBR: primaries fill [0..n_primary), extended occupies
@@ -251,8 +251,8 @@ bool createPartitions(std::string_view device, uint64_t total_sectors)
         ebr_lba[0] = ext_start;
         for (std::size_t i = 1; i < n_logical; ++i)
         {
-            ebr_lba[i] = ebr_lba[i - 1] + kEbrOverhead
-                         + static_cast<uint32_t>(logicals[i - 1]->sectors);
+            ebr_lba[i] = ebr_lba[i - 1] + kEbrOverhead +
+                         static_cast<uint32_t>(logicals[i - 1]->sectors);
         }
 
         for (std::size_t i = 0; i < n_logical; ++i)
@@ -266,8 +266,8 @@ bool createPartitions(std::string_view device, uint64_t total_sectors)
                 uint32_t remaining = 0;
                 for (std::size_t j = i + 1; j < n_logical; ++j)
                 {
-                    remaining += kEbrOverhead
-                                 + static_cast<uint32_t>(logicals[j]->sectors);
+                    remaining += kEbrOverhead +
+                                 static_cast<uint32_t>(logicals[j]->sectors);
                 }
                 setEntry(ebrs[i].entries[1], 0x05, next_ebr_rel, remaining,
                          ebr_lba[i + 1]);
@@ -282,8 +282,8 @@ bool createPartitions(std::string_view device, uint64_t total_sectors)
     emmc::util::Fd fd(::open(dev_z.c_str(), O_RDWR | O_CLOEXEC));
     if (!fd)
     {
-        std::cerr << std::format("partition: open({}) RW failed: {}\n",
-                                 dev_z, std::strerror(errno));
+        std::cerr << std::format("partition: open({}) RW failed: {}\n", dev_z,
+                                 std::strerror(errno));
         return false;
     }
 

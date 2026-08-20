@@ -113,8 +113,7 @@ void release_all()
         }
         catch (const std::exception& e)
         {
-            std::cerr << std::format("{} release failed: {}\n", name,
-                                     e.what());
+            std::cerr << std::format("{} release failed: {}\n", name, e.what());
         }
     }
     io.clear();

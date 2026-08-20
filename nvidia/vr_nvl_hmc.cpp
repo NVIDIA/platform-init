@@ -24,22 +24,22 @@ namespace nvidia
 // GPIO line names sourced from nvidia-vr-nvl-hmc-core.dtsi
 
 static constexpr std::array<GpioLevel, 5> gpio_checks{{
-    {"QSPI2_RST_L-O",            1},
-    {"HUB_RST_L-O",              1},
-    {"EMMC_RST_L-O",             1},
+    {"QSPI2_RST_L-O", 1},
+    {"HUB_RST_L-O", 1},
+    {"EMMC_RST_L-O", 1},
     {"BRD0_HMC_TO_MCU_I2C_EN-O", 1},
     {"BRD1_HMC_TO_MCU_I2C_EN-O", 1},
 }};
 
 // Source: create_eeprom_devices.sh (HMC variant)
 static constexpr std::array<EepromDevice, 2> boot_eeproms{{
-    {2, 0x57, "24c02", "HMC FRU",      false},
+    {2, 0x57, "24c02", "HMC FRU", false},
     {2, 0x50, "24c64", "Module 0 FRU", false},
 }};
 
 // Source: hw_checkout.sh EID definitions
 static constexpr std::array<ErotEndpoint, 7> erot_endpoints{{
-    {9,  "HGX_ERoT_BMC_0"},
+    {9, "HGX_ERoT_BMC_0"},
     {11, "HGX_IRoT_GPU_0"},
     {12, "HGX_IRoT_GPU_1"},
     {14, "HGX_IRoT_CPU_0"},
@@ -60,7 +60,8 @@ int init_vr_nvl_hmc()
     std::cerr << "vr-nvl-hmc: waiting for BRD0 standby power\n";
     if (iox_wait(1, 0x20, std::chrono::seconds{120}))
     {
-        std::cerr << "vr-nvl-hmc: BRD0 standby power up, binding IO expanders\n";
+        std::cerr
+            << "vr-nvl-hmc: BRD0 standby power up, binding IO expanders\n";
         iox_bind(1, 0x20);
         iox_bind(1, 0x21);
         if (iox_wait(7, 0x20, std::chrono::seconds{10}))
@@ -76,10 +77,10 @@ int init_vr_nvl_hmc()
 
     // Source: hmc_set_initial_gpio_out() in hmc_ready.sh
     std::cerr << "vr-nvl-hmc: initializing HMC GPIO output states\n";
-    gpio::set("QSPI2_RST_L-O",  1);
+    gpio::set("QSPI2_RST_L-O", 1);
     gpio::set("BMC_DDR4_TEN-O", 0);
-    gpio::set("HUB_RST_L-O",    1);
-    gpio::set("EMMC_RST_L-O",   1);
+    gpio::set("HUB_RST_L-O", 1);
+    gpio::set("EMMC_RST_L-O", 1);
 
     // Source: hmc_set_initial_gpio_out() — CPU recovery type = USB-RCM
     gpio::set("BRD0_CPU_RECOVERY_TYPE0-O", 0);
@@ -105,21 +106,24 @@ int init_vr_nvl_hmc()
     std::cerr << "vr-nvl-hmc: taking Board 1 HPM MCU out of reset\n";
     gpio::set("BRD1_HMC_TO_MCU_I2C_EN-O", 1);
 
-    // Source: hmc_fru_checker.sh (logic migrated to native C++; script eliminated)
-    // Instantiate baseboard FRU EEPROM on bus 10 addr 0x50 (24c02) if absent.
-    // Then read up to 512 bytes and sync to /etc/fru/baseboard.fru.bin so that
-    // FruDevice.service can discover HMC FRU data without parsing the raw EEPROM.
-    // Non-fatal: on read failure an empty file is created so FruDevice can start.
+    // Source: hmc_fru_checker.sh (logic migrated to native C++; script
+    // eliminated) Instantiate baseboard FRU EEPROM on bus 10 addr 0x50 (24c02)
+    // if absent. Then read up to 512 bytes and sync to
+    // /etc/fru/baseboard.fru.bin so that FruDevice.service can discover HMC FRU
+    // data without parsing the raw EEPROM. Non-fatal: on read failure an empty
+    // file is created so FruDevice can start.
     std::cerr << "vr-nvl-hmc: syncing HMC baseboard FRU\n";
     {
-        static constexpr std::array<EepromDevice, 1> fru_eeprom{{{10, 0x50, "24c02", "HMC Baseboard FRU", false}}};
+        static constexpr std::array<EepromDevice, 1> fru_eeprom{
+            {{10, 0x50, "24c02", "HMC Baseboard FRU", false}}};
         eeprom_init(fru_eeprom);
 
-        static constexpr auto eeprom_path = "/sys/bus/i2c/devices/10-0050/eeprom";
-        static constexpr auto fru_dir     = "/etc/fru";
-        static constexpr auto fru_file    = "/etc/fru/baseboard.fru.bin";
-        static constexpr std::size_t fru_size  = 512;
-        static constexpr int max_retries   = 10;
+        static constexpr auto eeprom_path =
+            "/sys/bus/i2c/devices/10-0050/eeprom";
+        static constexpr auto fru_dir = "/etc/fru";
+        static constexpr auto fru_file = "/etc/fru/baseboard.fru.bin";
+        static constexpr std::size_t fru_size = 512;
+        static constexpr int max_retries = 10;
 
         std::filesystem::create_directories(fru_dir);
 
@@ -135,15 +139,17 @@ int init_vr_nvl_hmc()
             }
             if (!read_ok)
             {
-                std::cerr << std::format("vr-nvl-hmc: FRU EEPROM read retry {}/{}\n",
-                                         i + 1, max_retries);
+                std::cerr << std::format(
+                    "vr-nvl-hmc: FRU EEPROM read retry {}/{}\n", i + 1,
+                    max_retries);
                 std::this_thread::sleep_for(std::chrono::milliseconds{100});
             }
         }
 
         if (!read_ok)
         {
-            std::cerr << "vr-nvl-hmc: FRU EEPROM read failed — creating empty FRU file\n";
+            std::cerr
+                << "vr-nvl-hmc: FRU EEPROM read failed — creating empty FRU file\n";
             std::ofstream{fru_file}; // empty file lets FruDevice start
         }
         else
@@ -152,14 +158,16 @@ int init_vr_nvl_hmc()
             if (std::ifstream existing{fru_file, std::ios::binary}; existing)
             {
                 std::vector<char> prev(fru_size, 0);
-                existing.read(prev.data(), static_cast<std::streamsize>(fru_size));
+                existing.read(prev.data(),
+                              static_cast<std::streamsize>(fru_size));
                 if (prev == buf)
                     needs_update = false;
             }
             if (needs_update)
             {
                 if (std::ofstream out{fru_file, std::ios::binary}; out)
-                    out.write(buf.data(), static_cast<std::streamsize>(fru_size));
+                    out.write(buf.data(),
+                              static_cast<std::streamsize>(fru_size));
                 else
                     std::cerr << "vr-nvl-hmc: failed to write FRU file\n";
             }
@@ -180,7 +188,8 @@ int init_vr_nvl_hmc()
     }
 
     // Source: nvidia-emmc-partition.service (create-partition.sh +
-    //         emmc-partition-format.sh). Layout identical to vr_bmc_emmc_layout.
+    //         emmc-partition-format.sh). Layout identical to
+    //         vr_bmc_emmc_layout.
     // Replaces create-partition.sh and repartition_check.sh in the bbappend.
     emmc_partition("mmcblk0");
     emmc_format_and_mount("mmcblk0");

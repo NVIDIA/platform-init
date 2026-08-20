@@ -3,7 +3,8 @@
 
 // Platform initialization daemon for meta-vr-quark-bmc.
 // Replaces bmc_ready.sh. Quark is the vHMC carrier board (NVL144 PDB).
-// vHMC container lifecycle scripts remain in scripts/platforms/vr-quark-bmc/vhmc/
+// vHMC container lifecycle scripts remain in
+// scripts/platforms/vr-quark-bmc/vhmc/
 
 #include "platform_utils.hpp"
 #include "utilities.hpp"
@@ -21,28 +22,28 @@ namespace nvidia
 // ── Platform config ───────────────────────────────────────────────────────
 // GPIO line names sourced from nvidia-vr-quark-bmc-core.dtsi
 
-// Source: gpio_check — GPIOs asserted by this init sequence, verified after EEPROM init
+// Source: gpio_check — GPIOs asserted by this init sequence, verified after
+// EEPROM init
 static constexpr std::array<GpioLevel, 5> gpio_checks{{
-    {"FPGA_READY_BMC-I",             1},
-    {"BMC_READY-O",                  1},
-    {"STBY_POWER_EN-O",              1},
+    {"FPGA_READY_BMC-I", 1},
+    {"BMC_READY-O", 1},
+    {"STBY_POWER_EN-O", 1},
     {"BMC_EROT_FPGA_SPI_MUX_SEL-O", 1},
-    {"EROT_FPGA_RST_L-O",            1},
+    {"EROT_FPGA_RST_L-O", 1},
 }};
 
 // Source: create_eeprom_devices.sh (Quark variant)
 static constexpr std::array<EepromDevice, 9> boot_eeproms{{
-    {1,  0x54, "24c02",  "CBC 0 FRU",    false},
-    {1,  0x55, "24c02",  "CBC 1 FRU",    false},
-    {2,  0x57, "24c02",  "HMC FRU",      false},
-    {2,  0x50, "24c64",  "Module 0 FRU", false},
-    {9,  0x50, "24c64",  "Module 0 Aux", false},
-    {9,  0x51, "24c64",  "Module 1 Aux", false},
+    {1, 0x54, "24c02", "CBC 0 FRU", false},
+    {1, 0x55, "24c02", "CBC 1 FRU", false},
+    {2, 0x57, "24c02", "HMC FRU", false},
+    {2, 0x50, "24c64", "Module 0 FRU", false},
+    {9, 0x50, "24c64", "Module 0 Aux", false},
+    {9, 0x51, "24c64", "Module 1 Aux", false},
     {14, 0x50, "24c128", "BF3 Left FRU", false},
-    {15, 0x50, "24c128", "BF3 Right FRU",false},
-    {21, 0x50, "24c64",  "IO Board FRU", false},
+    {15, 0x50, "24c128", "BF3 Right FRU", false},
+    {21, 0x50, "24c64", "IO Board FRU", false},
 }};
-
 
 // ── Quark-specific: FAN PWM initialization ────────────────────────────────
 // Source: init_quark_pwms() in bmc_ready.sh
@@ -68,7 +69,7 @@ int init_vr_quark_bmc()
     {
         // Source: bmc_set_initial_gpio_out() in bmc_ready.sh
         gpio::set("GLOBAL_WP_BMC-O", 0);
-        gpio::set("HMC_RST_R_L-O",   0);
+        gpio::set("HMC_RST_R_L-O", 0);
     }
 
     // Source: PDB IOX bind block in bmc_ready.sh (main)
@@ -80,11 +81,13 @@ int init_vr_quark_bmc()
     gpio::Event stby_pg("STBY_POWER_PG-I", 1);
     gpio::Event pdb_pg("STBY_PWR_OK-I", 1);
 
-    // Source: `if [ -d .../9-0020 ]; then set_gpio_level "STBY_POWER_EN-O" $HIGH`
+    // Source: `if [ -d .../9-0020 ]; then set_gpio_level "STBY_POWER_EN-O"
+    // $HIGH`
     //         in bmc_ready.sh
     if (iox_present(9, 0x20))
     {
-        std::cerr << "vr-quark-bmc: PDB IOX 9-0020 present — asserting STBY_POWER_EN-O\n";
+        std::cerr
+            << "vr-quark-bmc: PDB IOX 9-0020 present — asserting STBY_POWER_EN-O\n";
         gpio::set("STBY_POWER_EN-O", 1);
     }
 
@@ -112,13 +115,15 @@ int init_vr_quark_bmc()
     // USB3_A connector and host's USB controller.
     gpio::set("USB3_MUX_EN_L-O", 0);
 
-    // Source: `if [ -d .../9-0020 ]; then wait_standby_pwr "PDB"` in bmc_ready.sh
+    // Source: `if [ -d .../9-0020 ]; then wait_standby_pwr "PDB"` in
+    // bmc_ready.sh
     if (iox_present(9, 0x20))
     {
         std::cerr << "vr-quark-bmc: waiting for PDB STBY_PWR_OK-I\n";
         if (pdb_pg.wait() != gpio::EventResult::Asserted)
         {
-            std::cerr << "vr-quark-bmc: FATAL: STBY_PWR_OK-I (PDB standby) timeout\n";
+            std::cerr
+                << "vr-quark-bmc: FATAL: STBY_PWR_OK-I (PDB standby) timeout\n";
             return EXIT_FAILURE;
         }
     }
@@ -131,14 +136,14 @@ int init_vr_quark_bmc()
         return EXIT_FAILURE;
     }
 
-    // Source: `#stby_up=$(check_iox_7_20_present)` commented out in bmc_ready.sh
-    // No 2P for Quark
+    // Source: `#stby_up=$(check_iox_7_20_present)` commented out in
+    // bmc_ready.sh No 2P for Quark
 
     // Source: hmc_bypass() in bmc_ready.sh
     hmc_mux_select();
 
-    // Source: bind_gpio_expanders() in bmc_ready.sh (Quark: 12 expanders + 5-0022)
-    // 1-0020, 1-0021: HMC bypass
+    // Source: bind_gpio_expanders() in bmc_ready.sh (Quark: 12 expanders +
+    // 5-0022) 1-0020, 1-0021: HMC bypass
     iox_bind(1, 0x20);
     iox_bind(1, 0x21);
     // 2-0020 … 2-0024: B0_M0 MGMT board
@@ -157,33 +162,38 @@ int init_vr_quark_bmc()
     iox_bind(5, 0x22);
 
     // Source: bmc_set_stby_pg_gpio_out() in bmc_ready.sh
-    gpio::set("PWR_BRAKE_L-O",  1);
-    gpio::set("SHDN_REQ_L-O",   1);
+    gpio::set("PWR_BRAKE_L-O", 1);
+    gpio::set("SHDN_REQ_L-O", 1);
     gpio::set("SHDN_FORCE_L-O", 1);
     gpio::set("SYS_RST_IN_L-O", 0);
 
-    // Source: `if [ -d .../2-0020 ]; then wait_standby_pwr "B0_M0"` in bmc_ready.sh
+    // Source: `if [ -d .../2-0020 ]; then wait_standby_pwr "B0_M0"` in
+    // bmc_ready.sh
     if (iox_present(2, 0x20))
     {
         std::cerr << "vr-quark-bmc: waiting for B0_M0_STBY_POWER_PG-I\n";
-        if (!wait_gpio_high("B0_M0_STBY_POWER_PG-I", 200, std::chrono::milliseconds{100}))
+        if (!wait_gpio_high("B0_M0_STBY_POWER_PG-I", 200,
+                            std::chrono::milliseconds{100}))
         {
             std::cerr << "vr-quark-bmc: FATAL: B0_M0_STBY_POWER_PG-I timeout\n";
             return EXIT_FAILURE;
         }
     }
 
-    // Source: `if [ -d .../2-0020 ]; then wait_gpio_assert "B0_M0_HPM_MCU_OK-I" 100 0.1`
+    // Source: `if [ -d .../2-0020 ]; then wait_gpio_assert "B0_M0_HPM_MCU_OK-I"
+    // 100 0.1`
     //         + USB_HUB reset workaround in bmc_ready.sh
     if (iox_present(2, 0x20))
     {
-        if (!wait_gpio_high("B0_M0_HPM_MCU_OK-I", 100, std::chrono::milliseconds{100}))
+        if (!wait_gpio_high("B0_M0_HPM_MCU_OK-I", 100,
+                            std::chrono::milliseconds{100}))
         {
             std::cerr << "vr-quark-bmc: FATAL: B0_M0_HPM_MCU_OK-I timeout\n";
             return EXIT_FAILURE;
         }
 
-        // Source: USB_HUB reset workaround block within the 2-0020 guard in bmc_ready.sh
+        // Source: USB_HUB reset workaround block within the 2-0020 guard in
+        // bmc_ready.sh
         if (!std::filesystem::exists("/dev/ttyUSB0"))
         {
             std::cerr << "vr-quark-bmc: resetting USB_HUB0 on board 0\n";
@@ -192,33 +202,39 @@ int init_vr_quark_bmc()
         }
     }
 
-    // Source: `if [ -d .../7-0020 ]; then wait_gpio_assert "B1_M0_HPM_MCU_OK-I" 100 0.1`
+    // Source: `if [ -d .../7-0020 ]; then wait_gpio_assert "B1_M0_HPM_MCU_OK-I"
+    // 100 0.1`
     //         in bmc_ready.sh
     if (iox_present(7, 0x20))
     {
-        if (!wait_gpio_high("B1_M0_HPM_MCU_OK-I", 100, std::chrono::milliseconds{100}))
+        if (!wait_gpio_high("B1_M0_HPM_MCU_OK-I", 100,
+                            std::chrono::milliseconds{100}))
         {
             std::cerr << "vr-quark-bmc: FATAL: B1_M0_HPM_MCU_OK-I timeout\n";
             return EXIT_FAILURE;
         }
     }
 
-    // Source: `if [ -d .../2-0020 ]; then wait_gpio_assert "B0_M0_CPLD_READY-I" 100 0.1`
+    // Source: `if [ -d .../2-0020 ]; then wait_gpio_assert "B0_M0_CPLD_READY-I"
+    // 100 0.1`
     //         in bmc_ready.sh, exit 1 on failure
     if (iox_present(2, 0x20))
     {
-        if (!wait_gpio_high("B0_M0_CPLD_READY-I", 100, std::chrono::milliseconds{100}))
+        if (!wait_gpio_high("B0_M0_CPLD_READY-I", 100,
+                            std::chrono::milliseconds{100}))
         {
             std::cerr << "vr-quark-bmc: FATAL: B0_M0_CPLD_READY-I timeout\n";
             return EXIT_FAILURE;
         }
     }
 
-    // Source: `if [ -d .../7-0020 ]; then wait_gpio_assert "B1_M0_CPLD_READY-I" 100 0.1`
+    // Source: `if [ -d .../7-0020 ]; then wait_gpio_assert "B1_M0_CPLD_READY-I"
+    // 100 0.1`
     //         in bmc_ready.sh, exit 1 on failure
     if (iox_present(7, 0x20))
     {
-        if (!wait_gpio_high("B1_M0_CPLD_READY-I", 100, std::chrono::milliseconds{100}))
+        if (!wait_gpio_high("B1_M0_CPLD_READY-I", 100,
+                            std::chrono::milliseconds{100}))
         {
             std::cerr << "vr-quark-bmc: FATAL: B1_M0_CPLD_READY-I timeout\n";
             return EXIT_FAILURE;
@@ -244,7 +260,7 @@ int init_vr_quark_bmc()
     nvme_cpld_probe(15);
 
     // Source: set_bmc_ready() in bmc_ready.sh
-    gpio::set("BMC_READY-O",     1);
+    gpio::set("BMC_READY-O", 1);
     gpio::set("GLOBAL_WP_BMC-O", 0);
 
     sd_notify(0, "READY=1");

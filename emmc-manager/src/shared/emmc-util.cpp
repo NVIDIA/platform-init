@@ -21,10 +21,9 @@ bool rebootViaSystemd()
     }
     sd_bus_error err = SD_BUS_ERROR_NULL;
     sd_bus_message* m = nullptr;
-    int r = sd_bus_call_method(bus, "org.freedesktop.systemd1",
-                               "/org/freedesktop/systemd1",
-                               "org.freedesktop.systemd1.Manager", "Reboot",
-                               &err, &m, "");
+    int r = sd_bus_call_method(
+        bus, "org.freedesktop.systemd1", "/org/freedesktop/systemd1",
+        "org.freedesktop.systemd1.Manager", "Reboot", &err, &m, "");
     if (r < 0)
     {
         std::cerr << std::format("emmc-util: Reboot call failed: {}\n",

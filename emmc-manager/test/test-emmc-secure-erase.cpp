@@ -35,8 +35,8 @@ bool referenceCopy(const std::string& src, const std::string& dst)
     int sfd = ::open(src.c_str(), O_RDONLY | O_CLOEXEC);
     if (sfd < 0)
         return false;
-    int dfd = ::open(dst.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC,
-                     0600);
+    int dfd =
+        ::open(dst.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
     if (dfd < 0)
     {
         ::close(sfd);
@@ -81,8 +81,8 @@ TEST(EmmcSecureErase, BlockImageRoundTripPreservesBytes)
 {
     // Build a deterministic 9 MiB pseudo-random source — exercises the
     // multi-chunk loop (4 MiB + 4 MiB + 1 MiB).
-    auto tmpdir = std::filesystem::temp_directory_path()
-                  / "nvidia-emmc-monitor-test-secure-erase";
+    auto tmpdir = std::filesystem::temp_directory_path() /
+                  "nvidia-emmc-monitor-test-secure-erase";
     std::filesystem::create_directories(tmpdir);
     std::string src = (tmpdir / "src.bin").string();
     std::string dst = (tmpdir / "dst.bin").string();

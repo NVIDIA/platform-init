@@ -12,24 +12,21 @@
 cpp = meson.get_compiler('cpp')
 
 # Common dependencies used by both binaries.
-ext2fs_dep         = dependency('ext2fs', required: true)         # libext2fs
-e2p_dep            = dependency('e2p', required: true)            # libe2p
-com_err_dep        = cpp.find_library('com_err', required: true)  # libcom_err
-ss_dep             = cpp.find_library('ss', required: true)       # libss
-libubootenv_dep    = dependency('libubootenv', required: true)
-libsystemd_dep     = dependency('libsystemd', required: true)
+ext2fs_dep = dependency('ext2fs', required: true)  # libext2fs
+e2p_dep = dependency('e2p', required: true)  # libe2p
+com_err_dep = cpp.find_library('com_err', required: true)  # libcom_err
+libubootenv_dep = dependency('libubootenv', required: true)
+libsystemd_dep = dependency('libsystemd', required: true)
 
 # nvidia-emmc-init only — libgpiod (C API) for EMMC_RST_L-O toggle.
 # Pinned to the v1.x C API surface (gpiod_line_find / gpiod_line_request_output).
 # libgpiod v2.x is a breaking rewrite; we will not silently adopt it.
-gpiod_dep          = dependency('libgpiod',
-                                version: ['>=1.0', '<2.0'],
-                                required: true)
+gpiod_dep = dependency('libgpiod', version: ['>=1.0', '<2.0'], required: true)
 
 # nvidia-emmc-monitor only — sdbusplus + phosphor-dbus-interfaces +
 # phosphor-logging.
-sdbusplus_dep        = dependency('sdbusplus', required: true)
-phosphor_dbus_dep    = dependency('phosphor-dbus-interfaces', required: true)
+sdbusplus_dep = dependency('sdbusplus', required: true)
+phosphor_dbus_dep = dependency('phosphor-dbus-interfaces', required: true)
 phosphor_logging_dep = dependency('phosphor-logging', required: true)
 
 # The per-machine eMMC layout lives in include/emmc-layout-machine.h.
@@ -38,32 +35,41 @@ emmc_inc = include_directories('include')
 emmc_shared = static_library(
     'emmc-shared',
     sources: files(
-        'src/shared/emmc-uenv.cpp',
-        'src/shared/emmc-ioctl.cpp',
-        'src/shared/emmc-format.cpp',
-        'src/shared/emmc-util.cpp',
         'src/init/euda.cpp',
+        'src/shared/emmc-format.cpp',
+        'src/shared/emmc-ioctl.cpp',
+        'src/shared/emmc-uenv.cpp',
+        'src/shared/emmc-util.cpp',
     ),
     include_directories: emmc_inc,
-    dependencies: [ext2fs_dep, e2p_dep, com_err_dep, ss_dep, libubootenv_dep,
-                   libsystemd_dep],
+    dependencies: [
+        ext2fs_dep,
+        e2p_dep,
+        com_err_dep,
+        libubootenv_dep,
+        libsystemd_dep,
+    ],
 )
 
 # nvidia-emmc-init: initramfs binary.
 executable(
     'nvidia-emmc-init',
     sources: files(
-        'src/init/main.cpp',
         'src/init/emmc-init-flow.cpp',
+        'src/init/euda-hwreset.cpp',
+        'src/init/hwreset.cpp',
+        'src/init/main.cpp',
         'src/init/partition.cpp',
         'src/init/secure-erase.cpp',
-        'src/init/hwreset.cpp',
     ),
     include_directories: emmc_inc,
     link_with: emmc_shared,
     dependencies: [
-        ext2fs_dep, e2p_dep, com_err_dep, ss_dep,
-        libubootenv_dep, gpiod_dep,
+        ext2fs_dep,
+        e2p_dep,
+        com_err_dep,
+        libubootenv_dep,
+        gpiod_dep,
     ],
     install: true,
     install_dir: get_option('sbindir'),
@@ -73,18 +79,23 @@ executable(
 executable(
     'nvidia-emmc-monitor',
     sources: files(
-        'src/monitor/main.cpp',
-        'src/monitor/emmc-startup.cpp',
-        'src/monitor/emmc-monitor-loop.cpp',
         'src/monitor/emmc-dbus.cpp',
+        'src/monitor/emmc-monitor-loop.cpp',
         'src/monitor/emmc-redfish-log.cpp',
+        'src/monitor/emmc-startup.cpp',
+        'src/monitor/main.cpp',
     ),
     include_directories: emmc_inc,
     link_with: emmc_shared,
     dependencies: [
-        ext2fs_dep, e2p_dep, com_err_dep, ss_dep,
-        libubootenv_dep, libsystemd_dep,
-        sdbusplus_dep, phosphor_dbus_dep, phosphor_logging_dep,
+        ext2fs_dep,
+        e2p_dep,
+        com_err_dep,
+        libubootenv_dep,
+        libsystemd_dep,
+        sdbusplus_dep,
+        phosphor_dbus_dep,
+        phosphor_logging_dep,
     ],
     install: true,
     install_dir: get_option('bindir'),
@@ -129,13 +140,17 @@ if get_option('tests').allowed()
             if t_name == 'test-emmc-init-flow'
                 extra_srcs += files(
                     'src/init/emmc-init-flow.cpp',
+                    'src/init/euda-hwreset.cpp',
+                    'src/init/hwreset.cpp',
                     'src/init/partition.cpp',
                     'src/init/secure-erase.cpp',
-                    'src/init/hwreset.cpp',
                 )
                 extra_deps += [
-                    ext2fs_dep, e2p_dep, com_err_dep, ss_dep,
-                    libubootenv_dep, gpiod_dep,
+                    ext2fs_dep,
+                    e2p_dep,
+                    com_err_dep,
+                    libubootenv_dep,
+                    gpiod_dep,
                 ]
             elif t_name == 'test-emmc-monitor-loop'
                 # Constants-only test — no extra .cpp deps needed.
@@ -145,11 +160,15 @@ if get_option('tests').allowed()
                 )
                 extra_deps += [
                     libubootenv_dep,
-                    sdbusplus_dep, phosphor_dbus_dep, phosphor_logging_dep,
+                    sdbusplus_dep,
+                    phosphor_dbus_dep,
+                    phosphor_logging_dep,
                 ]
             elif t_name == 'test-emmc-uenv'
                 extra_deps += [
-                    ext2fs_dep, e2p_dep, com_err_dep, ss_dep,
+                    ext2fs_dep,
+                    e2p_dep,
+                    com_err_dep,
                     libubootenv_dep,
                 ]
             endif

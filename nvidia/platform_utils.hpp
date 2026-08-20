@@ -9,6 +9,13 @@
 #include "gpio.hpp"
 #include "i2c.hpp"
 
+#include <fcntl.h>
+#include <linux/fs.h>
+#include <sys/ioctl.h>
+#include <sys/mount.h>
+#include <sys/reboot.h>
+#include <unistd.h>
+
 #include <sdbusplus/bus.hpp>
 #include <sdbusplus/exception.hpp>
 
@@ -19,22 +26,16 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <fcntl.h>
 #include <filesystem>
 #include <format>
 #include <fstream>
 #include <iostream>
-#include <linux/fs.h>
 #include <map>
 #include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
-#include <sys/ioctl.h>
-#include <sys/mount.h>
-#include <sys/reboot.h>
 #include <thread>
-#include <unistd.h>
 #include <variant>
 #include <vector>
 
@@ -75,7 +76,7 @@ struct EepromDevice
 {
     unsigned int bus;
     unsigned int address;
-    std::string_view type;        // e.g. "24c128"
+    std::string_view type; // e.g. "24c128"
     std::string_view description;
     bool poweron_only = false;
 };
@@ -91,7 +92,8 @@ inline void eeprom_init(std::span<const EepromDevice> devices)
             continue;
         }
         std::cerr << std::format("eeprom_init: {} bus={} addr={:#x} type={}\n",
-                                 dev.description, dev.bus, dev.address, dev.type);
+                                 dev.description, dev.bus, dev.address,
+                                 dev.type);
         i2c::new_device(dev.bus, dev.address, dev.type);
     }
 }
@@ -124,7 +126,7 @@ inline void eeprom_remove_poweron(std::span<const EepromDevice> devices)
 struct GpioLevel
 {
     const char* name;
-    int         expected;
+    int expected;
 };
 
 inline int gpio_check(std::span<const GpioLevel> checks)
@@ -137,8 +139,9 @@ inline int gpio_check(std::span<const GpioLevel> checks)
             const int actual = gpio::get(g.name);
             if (actual != g.expected)
             {
-                std::cerr << std::format("gpio_check: FAIL {} expected={} actual={}\n",
-                                         g.name, g.expected, actual);
+                std::cerr << std::format(
+                    "gpio_check: FAIL {} expected={} actual={}\n", g.name,
+                    g.expected, actual);
                 all_pass = false;
             }
         }
@@ -155,9 +158,9 @@ inline int gpio_check(std::span<const GpioLevel> checks)
 // ── EEPROM content verification ───────────────────────────────────────────
 // Mirrors eeprom-crc-verifier.sh.
 // Reads the golden sample from the read-only overlay lowerdir (not through the
-// writable upper layer) to prevent a tampered upperdir from masking a bad EEPROM.
-// Non-fatal: logs pass/fail to stderr and to Redfish via phosphor-logging;
-// init continues regardless.
+// writable upper layer) to prevent a tampered upperdir from masking a bad
+// EEPROM. Non-fatal: logs pass/fail to stderr and to Redfish via
+// phosphor-logging; init continues regardless.
 
 inline void eeprom_crc_verify(
     unsigned bus, unsigned addr, std::string_view type,
@@ -165,10 +168,12 @@ inline void eeprom_crc_verify(
         "/usr/share/eeprom-crc-verifier/golden_eeprom.bin")
 {
     using namespace std::chrono_literals;
-    const auto tag = std::format("eeprom_crc_verify: bus={} addr={:#x}", bus, addr);
+    const auto tag =
+        std::format("eeprom_crc_verify: bus={} addr={:#x}", bus, addr);
 
     // ── Step 1: Ensure EEPROM driver is bound ─────────────────────────────
-    const auto dev_sysfs = std::format("/sys/bus/i2c/devices/{}-{:04x}", bus, addr);
+    const auto dev_sysfs =
+        std::format("/sys/bus/i2c/devices/{}-{:04x}", bus, addr);
     if (!std::filesystem::exists(dev_sysfs))
     {
         std::cerr << std::format("{}: binding driver {}\n", tag, type);
@@ -178,14 +183,15 @@ inline void eeprom_crc_verify(
     const auto eeprom_path = dev_sysfs + "/eeprom";
     if (!std::filesystem::exists(eeprom_path))
     {
-        std::cerr << std::format("{}: eeprom sysfs not found at {}\n",
-                                 tag, eeprom_path);
+        std::cerr << std::format("{}: eeprom sysfs not found at {}\n", tag,
+                                 eeprom_path);
         return;
     }
 
     // ── Step 2: Resolve golden sample path via overlay lowerdir ──────────
-    // Reading from the lowerdir directly (not through the overlay merge) prevents
-    // a write to the upperdir from shadowing the golden and producing a false pass.
+    // Reading from the lowerdir directly (not through the overlay merge)
+    // prevents a write to the upperdir from shadowing the golden and producing
+    // a false pass.
     std::string golden_path{golden_rel_path};
     {
         std::ifstream mounts{"/proc/mounts"};
@@ -216,8 +222,8 @@ inline void eeprom_crc_verify(
         std::ifstream f{golden_path, std::ios::binary};
         if (!f)
         {
-            std::cerr << std::format("{}: golden sample not found at {}\n",
-                                     tag, golden_path);
+            std::cerr << std::format("{}: golden sample not found at {}\n", tag,
+                                     golden_path);
             return;
         }
         golden.assign(std::istreambuf_iterator<char>{f}, {});
@@ -235,7 +241,8 @@ inline void eeprom_crc_verify(
         if (!f || !f.read(reinterpret_cast<char*>(actual.data()),
                           static_cast<std::streamsize>(golden.size())))
         {
-            std::cerr << std::format("{}: failed to read {}\n", tag, eeprom_path);
+            std::cerr << std::format("{}: failed to read {}\n", tag,
+                                     eeprom_path);
             return;
         }
     }
@@ -249,7 +256,8 @@ inline void eeprom_crc_verify(
     }
     else
     {
-        std::cerr << std::format("{}: FAIL — content does NOT match golden\n", tag);
+        std::cerr << std::format("{}: FAIL — content does NOT match golden\n",
+                                 tag);
         log_redfish("ResourceEvent.1.3.ResourceErrorsDetected", args,
                     "xyz.openbmc_project.Logging.Entry.Level.Warning");
     }
@@ -259,15 +267,17 @@ inline void eeprom_crc_verify(
 // Overload: golden data supplied by the caller as a constexpr byte array.
 // Skips file I/O and overlay lowerdir resolution entirely.
 // Use this when the golden bytes are embedded in the platform .cpp file.
-inline void eeprom_crc_verify(
-    unsigned bus, unsigned addr, std::string_view type,
-    std::span<const uint8_t> golden_bytes)
+inline void eeprom_crc_verify(unsigned bus, unsigned addr,
+                              std::string_view type,
+                              std::span<const uint8_t> golden_bytes)
 {
     using namespace std::chrono_literals;
-    const auto tag = std::format("eeprom_crc_verify: bus={} addr={:#x}", bus, addr);
+    const auto tag =
+        std::format("eeprom_crc_verify: bus={} addr={:#x}", bus, addr);
 
     // ── Step 1: Ensure EEPROM driver is bound ─────────────────────────────
-    const auto dev_sysfs  = std::format("/sys/bus/i2c/devices/{}-{:04x}", bus, addr);
+    const auto dev_sysfs =
+        std::format("/sys/bus/i2c/devices/{}-{:04x}", bus, addr);
     const auto eeprom_path = dev_sysfs + "/eeprom";
     if (!std::filesystem::exists(dev_sysfs))
     {
@@ -277,8 +287,8 @@ inline void eeprom_crc_verify(
     }
     if (!std::filesystem::exists(eeprom_path))
     {
-        std::cerr << std::format("{}: eeprom sysfs not found at {}\n",
-                                 tag, eeprom_path);
+        std::cerr << std::format("{}: eeprom sysfs not found at {}\n", tag,
+                                 eeprom_path);
         return;
     }
 
@@ -289,14 +299,15 @@ inline void eeprom_crc_verify(
         if (!f || !f.read(reinterpret_cast<char*>(actual.data()),
                           static_cast<std::streamsize>(golden_bytes.size())))
         {
-            std::cerr << std::format("{}: failed to read {}\n", tag, eeprom_path);
+            std::cerr << std::format("{}: failed to read {}\n", tag,
+                                     eeprom_path);
             return;
         }
     }
 
     // ── Step 3: Compare ───────────────────────────────────────────────────
-    const auto golden_vec = std::vector<uint8_t>(golden_bytes.begin(),
-                                                  golden_bytes.end());
+    const auto golden_vec =
+        std::vector<uint8_t>(golden_bytes.begin(), golden_bytes.end());
     const auto args = std::format("EEPROM bus={} addr={:#x}", bus, addr);
     if (actual == golden_vec)
     {
@@ -305,7 +316,8 @@ inline void eeprom_crc_verify(
     }
     else
     {
-        std::cerr << std::format("{}: FAIL — content does NOT match golden\n", tag);
+        std::cerr << std::format("{}: FAIL — content does NOT match golden\n",
+                                 tag);
         log_redfish("ResourceEvent.1.3.ResourceErrorsDetected", args,
                     "xyz.openbmc_project.Logging.Entry.Level.Warning");
     }
@@ -314,15 +326,15 @@ inline void eeprom_crc_verify(
 // ── NVMe CPLD MUX probe ───────────────────────────────────────────────────
 // Mirrors nvme_cpld_probe.sh + nvme_lib.sh.
 // The NVMe CPLD MUX (pca954x) is powered by RUN_POWER; if the BMC boots while
-// the host is off, the kernel's initial probe fails and the MUX is bound without
-// creating channel-0. Unbind + rebind forces a fresh probe.
-// If channel-0 already exists the MUX is healthy — leaves it alone.
-// Non-fatal; call for each (bus, addr) pair that has an E1.S MUX.
+// the host is off, the kernel's initial probe fails and the MUX is bound
+// without creating channel-0. Unbind + rebind forces a fresh probe. If
+// channel-0 already exists the MUX is healthy — leaves it alone. Non-fatal;
+// call for each (bus, addr) pair that has an E1.S MUX.
 inline void nvme_cpld_probe(unsigned bus, unsigned addr = 0x77)
 {
-    const auto key      = std::format("{}-{:04x}", bus, addr);
-    const auto dev      = "/sys/bus/i2c/devices/" + key;
-    const auto drv      = "/sys/bus/i2c/drivers/pca954x/" + key;
+    const auto key = std::format("{}-{:04x}", bus, addr);
+    const auto dev = "/sys/bus/i2c/devices/" + key;
+    const auto drv = "/sys/bus/i2c/drivers/pca954x/" + key;
     const auto channel0 = dev + "/channel-0";
 
     bool do_bind = true;
@@ -339,7 +351,8 @@ inline void nvme_cpld_probe(unsigned bus, unsigned addr = 0x77)
                 f << key;
             else
             {
-                std::cerr << std::format("nvme_cpld_probe: {}: unbind failed\n", key);
+                std::cerr << std::format("nvme_cpld_probe: {}: unbind failed\n",
+                                         key);
                 do_bind = false;
             }
         }
@@ -350,7 +363,8 @@ inline void nvme_cpld_probe(unsigned bus, unsigned addr = 0x77)
         if (std::ofstream f{"/sys/bus/i2c/drivers/pca954x/bind"}; f)
         {
             f << key;
-            std::cerr << std::format("nvme_cpld_probe: {}: bound to pca954x\n", key);
+            std::cerr << std::format("nvme_cpld_probe: {}: bound to pca954x\n",
+                                     key);
         }
         else
             std::cerr << std::format("nvme_cpld_probe: {}: bind failed\n", key);
@@ -362,11 +376,12 @@ inline void nvme_cpld_probe(unsigned bus, unsigned addr = 0x77)
 // Probes each bus at `addr` for a supported RTC by reading vendor register 0x10
 // and comparing the device ID. On match, binds the driver via new_device.
 // Non-fatal: logs if no RTC found.
-// buses: platform-specific list (e.g. {5, 19} for nvl/c2/e5010, {6, 19} for quark)
+// buses: platform-specific list (e.g. {5, 19} for nvl/c2/e5010, {6, 19} for
+// quark)
 
 struct RtcVariant
 {
-    uint8_t          device_id;
+    uint8_t device_id;
     std::string_view driver;
 };
 
@@ -382,7 +397,8 @@ inline void rtc_detect(std::span<const unsigned> buses, uint8_t addr = 0x6f)
         // If the kernel RTC driver already claimed this device from DTS,
         // I2C_SLAVE ioctl will fail with EBUSY. Check sysfs first — if a
         // driver is already bound the RTC is functional; skip raw I2C probe.
-        const auto sysfs_dev = std::format("/sys/bus/i2c/devices/{}-{:04x}", bus, addr);
+        const auto sysfs_dev =
+            std::format("/sys/bus/i2c/devices/{}-{:04x}", bus, addr);
         if (std::filesystem::exists(sysfs_dev + "/driver"))
         {
             std::cerr << std::format(
@@ -402,8 +418,8 @@ inline void rtc_detect(std::span<const unsigned> buses, uint8_t addr = 0x6f)
                 if (id != rtc.device_id)
                     continue;
                 std::cerr << std::format(
-                    "rtc_detect: bus={} addr={:#x}: found {} (id={:#x})\n",
-                    bus, addr, rtc.driver, id);
+                    "rtc_detect: bus={} addr={:#x}: found {} (id={:#x})\n", bus,
+                    addr, rtc.driver, id);
                 i2c::new_device(bus, addr, rtc.driver);
                 return;
             }
@@ -422,13 +438,13 @@ inline void rtc_detect(std::span<const unsigned> buses, uint8_t addr = 0x6f)
 
 struct ErotEndpoint
 {
-    unsigned int     eid;
+    unsigned int eid;
     std::string_view description;
 };
 
-inline int hw_checkout(std::span<const ErotEndpoint> endpoints,
-                       int retries = 5,
-                       std::chrono::seconds retry_delay = std::chrono::seconds{3})
+inline int hw_checkout(std::span<const ErotEndpoint> endpoints, int retries = 5,
+                       std::chrono::seconds retry_delay = std::chrono::seconds{
+                           3})
 {
     if (endpoints.empty())
     {
@@ -439,8 +455,8 @@ inline int hw_checkout(std::span<const ErotEndpoint> endpoints,
     bool all_pass = true;
     for (const auto& ep : endpoints)
     {
-        std::cerr << std::format("hw_checkout: checking EID={} ({})\n",
-                                 ep.eid, ep.description);
+        std::cerr << std::format("hw_checkout: checking EID={} ({})\n", ep.eid,
+                                 ep.description);
         const auto cmd = std::format(
             "mctp-vdm-util -t {} -c query_boot_status 2>&1", ep.eid);
 
@@ -461,8 +477,8 @@ inline int hw_checkout(std::span<const ErotEndpoint> endpoints,
 
         if (rc != 0)
         {
-            std::cerr << std::format("hw_checkout: FAIL EID={} rc={}\n",
-                                     ep.eid, rc);
+            std::cerr << std::format("hw_checkout: FAIL EID={} rc={}\n", ep.eid,
+                                     rc);
             all_pass = false;
         }
         else
@@ -471,7 +487,8 @@ inline int hw_checkout(std::span<const ErotEndpoint> endpoints,
         }
     }
 
-    std::cerr << (all_pass ? "hw_checkout: all PASS\n" : "hw_checkout: some FAIL\n");
+    std::cerr << (all_pass ? "hw_checkout: all PASS\n"
+                           : "hw_checkout: some FAIL\n");
     return all_pass ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
@@ -510,7 +527,8 @@ inline bool iox_wait(unsigned bus, unsigned addr,
                      std::chrono::seconds timeout = std::chrono::seconds{30})
 {
     using namespace std::chrono_literals;
-    const auto path = std::format("/sys/bus/i2c/drivers/pca953x/{}-{:04x}", bus, addr);
+    const auto path =
+        std::format("/sys/bus/i2c/drivers/pca953x/{}-{:04x}", bus, addr);
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     while (std::chrono::steady_clock::now() < deadline)
     {
@@ -518,8 +536,8 @@ inline bool iox_wait(unsigned bus, unsigned addr,
             return true;
         std::this_thread::sleep_for(1s);
     }
-    std::cerr << std::format("iox_wait: {}-{:04x} not present after {}s\n",
-                             bus, addr, timeout.count());
+    std::cerr << std::format("iox_wait: {}-{:04x} not present after {}s\n", bus,
+                             addr, timeout.count());
     return false;
 }
 
@@ -528,7 +546,8 @@ inline bool iox_wait(unsigned bus, unsigned addr,
 // Binds a PCA954x I2C mux. Used on C2 after B0_M1_I2C_SOCAMM_UPHY_SEL-O is set.
 inline void i2c_mux_bind(unsigned bus, unsigned addr)
 {
-    const auto path = std::format("/sys/bus/i2c/drivers/pca954x/{}-{:04x}", bus, addr);
+    const auto path =
+        std::format("/sys/bus/i2c/drivers/pca954x/{}-{:04x}", bus, addr);
     if (std::filesystem::exists(path))
         return;
     if (std::ofstream f{"/sys/bus/i2c/drivers/pca954x/bind"}; f)
@@ -546,17 +565,19 @@ inline void i2c_mux_bind(unsigned bus, unsigned addr)
 // present. HMC present → HIGH (dedicated path). HMC absent → LOW (bypass).
 // GPIO names may differ across platforms; override defaults as needed.
 inline void hmc_mux_select(const char* prsnt_gpio = "HMC_PRSNT_R-I",
-                           const char* sel_gpio   = "BMC_HMC_MUX_SEL-O")
+                           const char* sel_gpio = "BMC_HMC_MUX_SEL-O")
 {
     const int present = gpio::get(prsnt_gpio);
     if (present == 1)
     {
-        std::cerr << std::format("hmc_mux_select: HMC present — disabling I2C_MGMT1 bypass\n");
+        std::cerr << std::format(
+            "hmc_mux_select: HMC present — disabling I2C_MGMT1 bypass\n");
         gpio::set(sel_gpio, 1);
     }
     else
     {
-        std::cerr << std::format("hmc_mux_select: HMC absent — enabling I2C_MGMT1 bypass\n");
+        std::cerr << std::format(
+            "hmc_mux_select: HMC absent — enabling I2C_MGMT1 bypass\n");
         gpio::set(sel_gpio, 0);
     }
 }
@@ -564,11 +585,11 @@ inline void hmc_mux_select(const char* prsnt_gpio = "HMC_PRSNT_R-I",
 // ── 2d. GPIO poll helper ──────────────────────────────────────────────────
 // Source: wait_gpio_assert() in bmc_ready.sh
 // Polls a GPIO until it goes HIGH. Returns true on success, false on timeout.
-// Default: 100 retries × 100 ms = 10 s (matches script default for MCU/CPLD waits).
-// For standby power waits use retries=200 (20 s), delay=100 ms.
-inline bool wait_gpio_high(const char* name,
-                           int retries = 100,
-                           std::chrono::milliseconds delay = std::chrono::milliseconds{100})
+// Default: 100 retries × 100 ms = 10 s (matches script default for MCU/CPLD
+// waits). For standby power waits use retries=200 (20 s), delay=100 ms.
+inline bool wait_gpio_high(
+    const char* name, int retries = 100,
+    std::chrono::milliseconds delay = std::chrono::milliseconds{100})
 {
     std::cerr << std::format("wait_gpio_high: waiting for {}\n", name);
     for (int i = 0; i < retries; ++i)
@@ -626,15 +647,15 @@ inline void bmc_boot_banner(std::string_view uart_dev = "/dev/ttyS0")
 
 enum class EmmcPartType : uint8_t
 {
-    Linux    = 0x83,
+    Linux = 0x83,
     Extended = 0x05,
 };
 
 struct EmmcPartSpec
 {
-    int          num;
+    int num;
     EmmcPartType type;
-    uint64_t     size_bytes; // 0 = fill to end of disk (Extended only)
+    uint64_t size_bytes; // 0 = fill to end of disk (Extended only)
 };
 
 //   p1   64 MiB  Config data   (primary)
@@ -645,30 +666,33 @@ struct EmmcPartSpec
 //   p6    1 MiB  U-boot env    (logical)
 //   p7  1.9 GiB  Miscellaneous (logical)
 static constexpr std::array<EmmcPartSpec, 7> vr_bmc_emmc_layout{{
-    {1, EmmcPartType::Linux,      64ULL << 20},  //   64 MiB
-    {2, EmmcPartType::Linux,    2048ULL << 20},  //    2 GiB
-    {3, EmmcPartType::Linux,    1024ULL << 20},  //    1 GiB
-    {4, EmmcPartType::Extended,            0},   //  fills rest
-    {5, EmmcPartType::Linux,    2048ULL << 20},  //    2 GiB
-    {6, EmmcPartType::Linux,       1ULL << 20},  //    1 MiB
-    {7, EmmcPartType::Linux,    1900ULL << 20},  //  1.9 GiB
+    {1, EmmcPartType::Linux, 64ULL << 20},   //   64 MiB
+    {2, EmmcPartType::Linux, 2048ULL << 20}, //    2 GiB
+    {3, EmmcPartType::Linux, 1024ULL << 20}, //    1 GiB
+    {4, EmmcPartType::Extended, 0},          //  fills rest
+    {5, EmmcPartType::Linux, 2048ULL << 20}, //    2 GiB
+    {6, EmmcPartType::Linux, 1ULL << 20},    //    1 MiB
+    {7, EmmcPartType::Linux, 1900ULL << 20}, //  1.9 GiB
 }};
 
 // ── eMMC partition creation ───────────────────────────────────────────────
 // Replaces create-partition.sh.
 // Writes an MBR partition table directly via ioctl; no external tools.
 // Idempotent: skips if p1 already exists in sysfs.
-// layout: partition specs (default: vr_bmc_emmc_layout). Platforms with a different
+// layout: partition specs (default: vr_bmc_emmc_layout). Platforms with a
+// different
 //         layout pass their own constexpr array via std::span.
 
-inline int emmc_partition(std::string_view device,
-                          std::span<const EmmcPartSpec> layout = vr_bmc_emmc_layout)
+inline int emmc_partition(
+    std::string_view device,
+    std::span<const EmmcPartSpec> layout = vr_bmc_emmc_layout)
 {
     // Idempotent guard
     const auto sysfs_p1 = std::format("/sys/block/{0}/{0}p1/size", device);
     if (std::filesystem::exists(sysfs_p1))
     {
-        std::cerr << std::format("emmc_partition: {} already partitioned\n", device);
+        std::cerr << std::format("emmc_partition: {} already partitioned\n",
+                                 device);
         return EXIT_SUCCESS;
     }
 
@@ -678,11 +702,18 @@ inline int emmc_partition(std::string_view device,
     const int fd = ::open(dev_path.c_str(), O_RDWR | O_SYNC);
     if (fd < 0)
     {
-        std::cerr << std::format("emmc_partition: open {}: {}\n",
-                                 dev_path, std::strerror(errno));
+        std::cerr << std::format("emmc_partition: open {}: {}\n", dev_path,
+                                 std::strerror(errno));
         return EXIT_FAILURE;
     }
-    struct Guard { int fd; ~Guard() { ::close(fd); } } guard{fd};
+    struct Guard
+    {
+        int fd;
+        ~Guard()
+        {
+            ::close(fd);
+        }
+    } guard{fd};
 
     uint64_t total_bytes = 0;
     if (::ioctl(fd, BLKGETSIZE64, &total_bytes) < 0)
@@ -693,7 +724,8 @@ inline int emmc_partition(std::string_view device,
     }
 
     constexpr uint32_t SECTOR = 512;
-    constexpr uint32_t ALIGN  = 2048; // 1 MiB boundary in sectors (fdisk default)
+    constexpr uint32_t ALIGN =
+        2048; // 1 MiB boundary in sectors (fdisk default)
     const uint64_t total_sects = total_bytes / SECTOR;
 
     auto align_up = [](uint64_t lba) -> uint64_t {
@@ -701,15 +733,21 @@ inline int emmc_partition(std::string_view device,
     };
 
     // CHS encoding using fdisk's LBA geometry (255 heads × 63 spt).
-    // CHS is not used for LBA-mode access but must be set for tool compatibility.
+    // CHS is not used for LBA-mode access but must be set for tool
+    // compatibility.
     constexpr uint32_t HEADS = 255;
-    constexpr uint32_t SPT   = 63;
+    constexpr uint32_t SPT = 63;
 
     auto encode_chs = [&](uint8_t* out, uint64_t abs_lba) {
         uint32_t c = static_cast<uint32_t>(abs_lba / (HEADS * SPT));
         uint32_t h = static_cast<uint32_t>((abs_lba % (HEADS * SPT)) / SPT);
         uint32_t s = static_cast<uint32_t>((abs_lba % SPT) + 1);
-        if (c > 1023) { c = 1023; h = 254; s = 63; } // cap at max CHS
+        if (c > 1023)
+        {
+            c = 1023;
+            h = 254;
+            s = 63;
+        } // cap at max CHS
         out[0] = static_cast<uint8_t>(h);
         out[1] = static_cast<uint8_t>((s & 0x3F) | ((c >> 2) & 0xC0));
         out[2] = static_cast<uint8_t>(c & 0xFF);
@@ -718,18 +756,22 @@ inline int emmc_partition(std::string_view device,
     // Write a 16-byte MBR/EBR partition entry.
     // abs_lba: absolute disk LBA (used only for CHS encoding)
     // rel_lba: LBA value written to the entry (may be relative to a base)
-    auto fill_entry = [&](uint8_t* e, uint8_t type,
-                          uint64_t abs_lba, uint64_t rel_lba, uint64_t size) {
+    auto fill_entry = [&](uint8_t* e, uint8_t type, uint64_t abs_lba,
+                          uint64_t rel_lba, uint64_t size) {
         e[0] = 0x00; // not bootable
         encode_chs(e + 1, abs_lba);
         e[4] = type;
         encode_chs(e + 5, abs_lba + (size > 0 ? size - 1 : 0));
         const auto r = static_cast<uint32_t>(rel_lba);
         const auto n = static_cast<uint32_t>(size);
-        e[8]  = r & 0xFF;        e[9]  = (r >> 8) & 0xFF;
-        e[10] = (r >> 16) & 0xFF; e[11] = (r >> 24) & 0xFF;
-        e[12] = n & 0xFF;        e[13] = (n >> 8) & 0xFF;
-        e[14] = (n >> 16) & 0xFF; e[15] = (n >> 24) & 0xFF;
+        e[8] = r & 0xFF;
+        e[9] = (r >> 8) & 0xFF;
+        e[10] = (r >> 16) & 0xFF;
+        e[11] = (r >> 24) & 0xFF;
+        e[12] = n & 0xFF;
+        e[13] = (n >> 8) & 0xFF;
+        e[14] = (n >> 16) & 0xFF;
+        e[15] = (n >> 24) & 0xFF;
     };
 
     // Primary partition LBA ranges (from layout; index matches num-1)
@@ -748,14 +790,16 @@ inline int emmc_partition(std::string_view device,
 
     // Logical partitions: each preceded by a 1-sector EBR at a 1 MiB boundary,
     // with the data starting ALIGN sectors after the EBR.
-    const uint64_t p5_ebr   = p4_start;
+    const uint64_t p5_ebr = p4_start;
     const uint64_t p5_start = p5_ebr + ALIGN;
 
-    const uint64_t p6_ebr   = align_up(p5_start + p5_sects);
+    const uint64_t p6_ebr = align_up(p5_start + p5_sects);
     const uint64_t p6_start = p6_ebr + ALIGN;
 
-    const uint64_t p7_ebr   = align_up(p6_start + p6_sects);
-    const uint64_t p7_start = p7_ebr + ALIGN;
+    // No p7_start: the pX_start values exist only to position the *next*
+    // EBR, and p7 is last in the chain. write_ebr() derives each partition's
+    // own data offset as ebr_lba + ALIGN.
+    const uint64_t p7_ebr = align_up(p6_start + p6_sects);
 
     // ── MBR: sector 0 ────────────────────────────────────────────────────
     std::array<uint8_t, 512> mbr{};
@@ -763,7 +807,7 @@ inline int emmc_partition(std::string_view device,
     mbr[511] = 0xAA;
 
     // Primary entries at offset 446; for primary partitions abs == rel
-    fill_entry(mbr.data() + 446,      0x83, p1_start, p1_start, p1_sects);
+    fill_entry(mbr.data() + 446, 0x83, p1_start, p1_start, p1_sects);
     fill_entry(mbr.data() + 446 + 16, 0x83, p2_start, p2_start, p2_sects);
     fill_entry(mbr.data() + 446 + 32, 0x83, p3_start, p3_start, p3_sects);
     fill_entry(mbr.data() + 446 + 48, 0x05, p4_start, p4_start, p4_sects);
@@ -777,7 +821,8 @@ inline int emmc_partition(std::string_view device,
 
     // ── EBRs for logical partitions ───────────────────────────────────────
     // EBR entry[0]: this logical partition (lba_start relative to EBR sector)
-    // EBR entry[1]: next EBR           (lba_start relative to p4_start), 0 if last
+    // EBR entry[1]: next EBR           (lba_start relative to p4_start), 0 if
+    // last
     //               lba_size           = ALIGN + next_partition_size
 
     auto write_ebr = [&](uint64_t ebr_lba, uint64_t data_sects,
@@ -788,17 +833,17 @@ inline int emmc_partition(std::string_view device,
 
         // Entry 0: current logical (CHS=absolute, LBA=relative to EBR)
         fill_entry(ebr.data() + 446, 0x83,
-                   ebr_lba + ALIGN,  // abs_lba for CHS
-                   ALIGN,            // rel_lba (offset from EBR)
+                   ebr_lba + ALIGN, // abs_lba for CHS
+                   ALIGN,           // rel_lba (offset from EBR)
                    data_sects);
 
         // Entry 1: next EBR (CHS=absolute, LBA=relative to extended start)
         if (next_ebr_lba != 0)
         {
             fill_entry(ebr.data() + 462, 0x05,
-                       next_ebr_lba,              // abs_lba for CHS
-                       next_ebr_lba - p4_start,   // rel_lba (offset from p4)
-                       ALIGN + next_sects);        // slot = EBR gap + data
+                       next_ebr_lba,            // abs_lba for CHS
+                       next_ebr_lba - p4_start, // rel_lba (offset from p4)
+                       ALIGN + next_sects);     // slot = EBR gap + data
         }
 
         const auto offset = static_cast<off_t>(ebr_lba) * SECTOR;
@@ -807,7 +852,7 @@ inline int emmc_partition(std::string_view device,
 
     if (!write_ebr(p5_ebr, p5_sects, p6_ebr, p6_sects) ||
         !write_ebr(p6_ebr, p6_sects, p7_ebr, p7_sects) ||
-        !write_ebr(p7_ebr, p7_sects, 0,      0))
+        !write_ebr(p7_ebr, p7_sects, 0, 0))
     {
         std::cerr << std::format("emmc_partition: EBR write: {}\n",
                                  std::strerror(errno));
@@ -830,24 +875,27 @@ inline int emmc_partition(std::string_view device,
         // Non-fatal: the table is on disk; kernel will pick it up after reboot
     }
 
-    std::cerr << std::format("emmc_partition: {} partitioned successfully\n", device);
+    std::cerr << std::format("emmc_partition: {} partitioned successfully\n",
+                             device);
     return EXIT_SUCCESS;
 }
 
 // ── Partition layout check ────────────────────────────────────────────────
 // Replaces repartition_check.sh.
 // Validates sysfs sector counts against the provided layout.
-// layout: partition specs (default: vr_bmc_emmc_layout). Must match what was written
+// layout: partition specs (default: vr_bmc_emmc_layout). Must match what was
+// written
 //         by emmc_partition().
 
-inline int partition_check(std::string_view device,
-                           std::span<const EmmcPartSpec> layout = vr_bmc_emmc_layout)
+inline int partition_check(
+    std::string_view device,
+    std::span<const EmmcPartSpec> layout = vr_bmc_emmc_layout)
 {
-    constexpr int  tolerance_pct = 2;
-    constexpr long sector_bytes  = 512;
+    constexpr int tolerance_pct = 2;
+    constexpr long sector_bytes = 512;
 
     int missing = 0;
-    int failed  = 0;
+    int failed = 0;
 
     // Count non-extended entries (those we can validate via sysfs)
     int total = 0;
@@ -860,9 +908,10 @@ inline int partition_check(std::string_view device,
         if (spec.type == EmmcPartType::Extended)
             continue; // variable size; nothing to compare
 
-        const long expected_sects = static_cast<long>(spec.size_bytes / sector_bytes);
-        const auto sysfs = std::format("/sys/block/{0}/{0}p{1}/size",
-                                       device, spec.num);
+        const long expected_sects =
+            static_cast<long>(spec.size_bytes / sector_bytes);
+        const auto sysfs =
+            std::format("/sys/block/{0}/{0}p{1}/size", device, spec.num);
 
         long actual_sects = -1;
         if (std::ifstream f{sysfs}; f)
@@ -876,19 +925,19 @@ inline int partition_check(std::string_view device,
             continue;
         }
 
-        const long diff     = std::abs(actual_sects - expected_sects);
-        const long diff_pct = expected_sects > 0
-                            ? diff * 100L / expected_sects : 100L;
+        const long diff = std::abs(actual_sects - expected_sects);
+        const long diff_pct =
+            expected_sects > 0 ? diff * 100L / expected_sects : 100L;
 
         if (diff_pct <= tolerance_pct)
             std::cerr << std::format("partition_check: {}p{} OK ({}%)\n",
                                      device, spec.num, diff_pct);
         else
         {
-            std::cerr << std::format(
-                "partition_check: {}p{} MISMATCH "
-                "(actual={} expected=~{} diff={}%)\n",
-                device, spec.num, actual_sects, expected_sects, diff_pct);
+            std::cerr << std::format("partition_check: {}p{} MISMATCH "
+                                     "(actual={} expected=~{} diff={}%)\n",
+                                     device, spec.num, actual_sects,
+                                     expected_sects, diff_pct);
             ++failed;
         }
     }
@@ -911,7 +960,7 @@ inline int partition_check(std::string_view device,
 
 struct EmmcMount
 {
-    int         part_num;
+    int part_num;
     const char* mount_point;
 };
 
@@ -955,15 +1004,15 @@ inline void emmc_format_and_mount(
     for (const auto& m : mounts)
     {
         const auto part = std::format("/dev/{}p{}", device, m.part_num);
-        const auto mpt  = std::string{m.mount_point};
+        const auto mpt = std::string{m.mount_point};
 
         // 1. Create mount point directory
         std::error_code ec;
         std::filesystem::create_directories(mpt, ec);
         if (ec)
         {
-            std::cerr << std::format("emmc_mount: mkdir {} failed: {}\n",
-                                     mpt, ec.message());
+            std::cerr << std::format("emmc_mount: mkdir {} failed: {}\n", mpt,
+                                     ec.message());
             continue;
         }
 
@@ -977,7 +1026,8 @@ inline void emmc_format_and_mount(
         // 3. Try to mount
         if (::mount(part.c_str(), mpt.c_str(), "ext4", 0, nullptr) == 0)
         {
-            std::cerr << std::format("emmc_mount: {} mounted at {}\n", part, mpt);
+            std::cerr << std::format("emmc_mount: {} mounted at {}\n", part,
+                                     mpt);
             continue;
         }
 
@@ -985,8 +1035,8 @@ inline void emmc_format_and_mount(
         // EINVAL = no valid superblock; ENOENT = partition node not yet in /dev
         if (err != EINVAL && err != ENOENT)
         {
-            std::cerr << std::format("emmc_mount: {} mount failed: {}\n",
-                                     part, std::strerror(err));
+            std::cerr << std::format("emmc_mount: {} mount failed: {}\n", part,
+                                     std::strerror(err));
             continue;
         }
 
@@ -1003,8 +1053,9 @@ inline void emmc_format_and_mount(
             std::cerr << std::format("emmc_mount: {} formatted+mounted at {}\n",
                                      part, mpt);
         else
-            std::cerr << std::format("emmc_mount: {} post-format mount failed: {}\n",
-                                     part, std::strerror(errno));
+            std::cerr << std::format(
+                "emmc_mount: {} post-format mount failed: {}\n", part,
+                std::strerror(errno));
     }
 }
 
@@ -1019,7 +1070,7 @@ inline void emmc_format_and_mount(
 
 inline int filesystem_check(
     std::string_view rwfs_mount = "/run/initramfs/rw",
-    std::string_view work_path  = "/run/initramfs/rw/work")
+    std::string_view work_path = "/run/initramfs/rw/work")
 {
     using namespace std::chrono_literals;
 
@@ -1044,7 +1095,8 @@ inline int filesystem_check(
     auto fw_getenv = [](std::string_view key) -> std::string {
         const auto cmd = std::format("fw_printenv -n {} 2>/dev/null", key);
         auto* pipe = ::popen(cmd.data(), "r");
-        if (!pipe) return {};
+        if (!pipe)
+            return {};
         char buf[256]{};
         std::string result;
         while (::fgets(buf, sizeof(buf), pipe))
@@ -1056,10 +1108,19 @@ inline int filesystem_check(
     };
 
     auto fw_setenv = [](std::string_view key, std::string_view value = {}) {
-        const auto cmd = value.empty()
-            ? std::format("fw_setenv {} 2>/dev/null", key)
-            : std::format("fw_setenv {} {} 2>/dev/null", key, value);
-        ::system(cmd.c_str()); // NOLINT(cert-env33-c)
+        const auto cmd =
+            value.empty()
+                ? std::format("fw_setenv {} 2>/dev/null", key)
+                : std::format("fw_setenv {} {} 2>/dev/null", key, value);
+        // Best-effort, but a non-zero status means the recovery counter did
+        // not persist, which would let the reboot loop repeat. Log it rather
+        // than discard the result.
+        const int rc = ::system(cmd.c_str()); // NOLINT(cert-env33-c)
+        if (rc != 0)
+        {
+            std::cerr << std::format(
+                "filesystem_check: '{}' failed (status {})\n", cmd, rc);
+        }
     };
 
     // Log a Redfish event via D-Bus
@@ -1070,12 +1131,11 @@ inline int filesystem_check(
         {
             auto bus = sdbusplus::bus::new_default();
             auto m = bus.new_method_call(
-                "xyz.openbmc_project.Logging",
-                "/xyz/openbmc_project/logging",
+                "xyz.openbmc_project.Logging", "/xyz/openbmc_project/logging",
                 "xyz.openbmc_project.Logging.Create", "Create");
             m.append(message_id, severity,
                      std::vector<std::pair<std::string, std::string>>{
-                         {"REDFISH_MESSAGE_ID",   message_id},
+                         {"REDFISH_MESSAGE_ID", message_id},
                          {"REDFISH_MESSAGE_ARGS", args},
                      });
             bus.call(m);
@@ -1089,17 +1149,17 @@ inline int filesystem_check(
 
     static constexpr auto level_info =
         "xyz.openbmc_project.Logging.Entry.Level.Informational";
-    static constexpr auto level_err  =
+    static constexpr auto level_err =
         "xyz.openbmc_project.Logging.Entry.Level.Error";
     static constexpr auto msg_corrected =
         "ResourceEvent.1.0.ResourceErrorsCorrected";
-    static constexpr auto msg_detected  =
+    static constexpr auto msg_detected =
         "ResourceEvent.1.0.ResourceErrorsDetected";
-    static constexpr auto msg_reboot    = "OpenBMC.0.4.BMCRebootReason";
+    static constexpr auto msg_reboot = "OpenBMC.0.4.BMCRebootReason";
 
     // If a previous recovery succeeded, log the correction and clear the flag
     const auto prev = fw_getenv("rwfs_recovery");
-    const int  prev_count = prev.empty() ? 0 : std::stoi(prev);
+    const int prev_count = prev.empty() ? 0 : std::stoi(prev);
     if (prev_count > 0 && is_mounted(rwfs_mount))
     {
         std::this_thread::sleep_for(10s); // wait for logging service
@@ -1110,8 +1170,8 @@ inline int filesystem_check(
     // Check RWFS mount
     if (!is_mounted(rwfs_mount))
     {
-        std::cerr << std::format(
-            "filesystem_check: RWFS not mounted at {}\n", rwfs_mount);
+        std::cerr << std::format("filesystem_check: RWFS not mounted at {}\n",
+                                 rwfs_mount);
         log_redfish(msg_detected, level_err, "BMC EMMC,Data Corruption");
 
         constexpr int max_retries = 3;
@@ -1119,7 +1179,8 @@ inline int filesystem_check(
         {
             std::cerr << std::format(
                 "filesystem_check: failed after {} attempts; "
-                "manual intervention required\n", max_retries);
+                "manual intervention required\n",
+                max_retries);
             return EXIT_FAILURE;
         }
 
@@ -1157,8 +1218,8 @@ inline int filesystem_check(
 // Polls org.freedesktop.DBus.GetNameOwner until the named service acquires
 // a bus name or the timeout elapses. Used by post-ready init steps that
 // depend on services starting after sd_notify(READY=1).
-inline bool dbus_wait_for_service(const char* name,
-                                   std::chrono::seconds timeout = std::chrono::seconds{60})
+inline bool dbus_wait_for_service(
+    const char* name, std::chrono::seconds timeout = std::chrono::seconds{60})
 {
     using namespace std::chrono_literals;
     const auto deadline = std::chrono::steady_clock::now() + timeout;
@@ -1167,14 +1228,17 @@ inline bool dbus_wait_for_service(const char* name,
         try
         {
             auto bus = sdbusplus::bus::new_default();
-            auto m   = bus.new_method_call("org.freedesktop.DBus",
-                                            "/org/freedesktop/DBus",
-                                            "org.freedesktop.DBus", "GetNameOwner");
+            auto m = bus.new_method_call(
+                "org.freedesktop.DBus", "/org/freedesktop/DBus",
+                "org.freedesktop.DBus", "GetNameOwner");
             m.append(name);
             bus.call(m);
             return true;
         }
-        catch (...) { std::this_thread::sleep_for(1s); }
+        catch (...)
+        {
+            std::this_thread::sleep_for(1s);
+        }
     }
     std::cerr << std::format("dbus_wait_for_service: {} not ready after {}s\n",
                              name, timeout.count());
@@ -1186,7 +1250,8 @@ inline bool dbus_wait_for_service(const char* name,
 // Waits for xyz.openbmc_project.Logging, reads pstore/journal/fw_printenv to
 // determine the reset cause, and logs BMCRebootReason or BMCKernelPanic.
 // Non-fatal: called post-ready; failures are logged to stderr only.
-inline void bmc_reset_check(std::chrono::seconds timeout = std::chrono::seconds{60})
+inline void bmc_reset_check(std::chrono::seconds timeout = std::chrono::seconds{
+                                60})
 {
     using namespace std::chrono_literals;
 
@@ -1200,17 +1265,19 @@ inline void bmc_reset_check(std::chrono::seconds timeout = std::chrono::seconds{
         std::ifstream f{"/var/lib/systemd/pstore/dmesg-ramoops-0"};
         for (std::string line; std::getline(f, line);)
             if (line.find("watchdog pretimeout event") != std::string::npos)
-                { kernel_wdt = true; break; }
+            {
+                kernel_wdt = true;
+                break;
+            }
     }
 
     // ── Check kernel panic in boot journal ────────────────────────────────
     bool kernel_panic = false;
     if (!kernel_wdt)
     {
-        FILE* p = ::popen(
-            "journalctl --no-pager -b 2>/dev/null"
-            " | grep -q 'PStore dmesg-ramoops' && echo y",
-            "r");
+        FILE* p = ::popen("journalctl --no-pager -b 2>/dev/null"
+                          " | grep -q 'PStore dmesg-ramoops' && echo y",
+                          "r");
         if (p)
         {
             char buf[4]{};
@@ -1232,12 +1299,15 @@ inline void bmc_reset_check(std::chrono::seconds timeout = std::chrono::seconds{
             if (::fgets(buf, sizeof(buf), p))
             {
                 std::string raw{buf};
-                while (!raw.empty() && (raw.back() == '\n' || raw.back() == '\r'))
+                while (!raw.empty() &&
+                       (raw.back() == '\n' || raw.back() == '\r'))
                     raw.pop_back();
-                for (auto& c : raw) if (c == '_') c = ' ';
+                for (auto& c : raw)
+                    if (c == '_')
+                        c = ' ';
                 const auto sp = raw.find(' ');
-                wdt         = sp != std::string::npos ? raw.substr(0, sp) : raw;
-                reset_mode  = sp != std::string::npos ? raw.substr(sp + 1) : "";
+                wdt = sp != std::string::npos ? raw.substr(0, sp) : raw;
+                reset_mode = sp != std::string::npos ? raw.substr(sp + 1) : "";
                 full_reason = raw;
             }
             ::pclose(p);
@@ -1252,7 +1322,7 @@ inline void bmc_reset_check(std::chrono::seconds timeout = std::chrono::seconds{
     auto log_event = [&](const char* short_id, std::string_view args = {}) {
         try
         {
-            const auto full_id    = std::format("OpenBMC.0.4.{}", short_id);
+            const auto full_id = std::format("OpenBMC.0.4.{}", short_id);
             const auto redfish_id = std::format("OpenBMC.0.5.{}", short_id);
             std::vector<KV> data{
                 {"REDFISH_MESSAGE_ID", redfish_id},
@@ -1261,7 +1331,7 @@ inline void bmc_reset_check(std::chrono::seconds timeout = std::chrono::seconds{
             if (!args.empty())
                 data.emplace_back("REDFISH_MESSAGE_ARGS", std::string{args});
             auto bus = sdbusplus::bus::new_default();
-            auto m   = bus.new_method_call(
+            auto m = bus.new_method_call(
                 "xyz.openbmc_project.Logging", "/xyz/openbmc_project/logging",
                 "xyz.openbmc_project.Logging.Create", "Create");
             m.append(full_id, std::string{sev_info}, data);
@@ -1269,7 +1339,8 @@ inline void bmc_reset_check(std::chrono::seconds timeout = std::chrono::seconds{
         }
         catch (const std::exception& e)
         {
-            std::cerr << std::format("bmc_reset_check: log failed: {}\n", e.what());
+            std::cerr << std::format("bmc_reset_check: log failed: {}\n",
+                                     e.what());
         }
     };
 
@@ -1295,7 +1366,8 @@ inline void bmc_reset_check(std::chrono::seconds timeout = std::chrono::seconds{
     }
     else if (!wdt.empty())
     {
-        const auto msg = std::format("BMC reset due to {} {} Reset", wdt, reset_mode);
+        const auto msg =
+            std::format("BMC reset due to {} {} Reset", wdt, reset_mode);
         std::cerr << std::format("bmc_reset_check: {}\n", msg);
         log_event("BMCRebootReason", msg);
     }

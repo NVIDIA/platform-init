@@ -50,9 +50,18 @@ class Fd
         return *this;
     }
 
-    [[nodiscard]] int get() const noexcept { return fd_; }
-    [[nodiscard]] bool valid() const noexcept { return fd_ >= 0; }
-    explicit operator bool() const noexcept { return valid(); }
+    [[nodiscard]] int get() const noexcept
+    {
+        return fd_;
+    }
+    [[nodiscard]] bool valid() const noexcept
+    {
+        return fd_ >= 0;
+    }
+    explicit operator bool() const noexcept
+    {
+        return valid();
+    }
 
   private:
     int fd_ = -1;

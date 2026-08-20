@@ -35,8 +35,8 @@ namespace fs = std::filesystem;
 std::string firstToken(const std::string& line)
 {
     auto hash = line.find('#');
-    std::string code = (hash != std::string::npos) ? line.substr(0, hash)
-                                                   : line;
+    std::string code =
+        (hash != std::string::npos) ? line.substr(0, hash) : line;
     std::istringstream iss(code);
     std::string tok;
     iss >> tok;
@@ -48,9 +48,8 @@ std::string firstToken(const std::string& line)
 // kernel sees the device at all.
 void diagnoseLibubootOpen(const std::string& staged_path, int err)
 {
-    std::cerr << std::format(
-        "emmc-uenv: libuboot_open err={} ({})\n", err,
-        std::strerror(err > 0 ? err : -err));
+    std::cerr << std::format("emmc-uenv: libuboot_open err={} ({})\n", err,
+                             std::strerror(err > 0 ? err : -err));
 
     std::ifstream cfg(staged_path);
     std::string line;
@@ -58,8 +57,8 @@ void diagnoseLibubootOpen(const std::string& staged_path, int err)
     {
         if (!line.empty() && line[0] != '#')
         {
-            std::cerr << std::format(
-                "emmc-uenv: staged cfg line: '{}'\n", line);
+            std::cerr << std::format("emmc-uenv: staged cfg line: '{}'\n",
+                                     line);
         }
     }
 
@@ -75,16 +74,15 @@ void diagnoseLibubootOpen(const std::string& staged_path, int err)
         struct stat st{};
         if (::stat(dev.c_str(), &st) != 0)
         {
-            std::cerr << std::format(
-                "emmc-uenv: stat({}) failed: {}\n", dev,
-                std::strerror(errno));
+            std::cerr << std::format("emmc-uenv: stat({}) failed: {}\n", dev,
+                                     std::strerror(errno));
             return;
         }
         std::cerr << std::format(
             "emmc-uenv: stat({}): mode=0{:o} ({}{}{}) size={}\n", dev,
             st.st_mode, S_ISBLK(st.st_mode) ? "blk" : "",
-            S_ISCHR(st.st_mode) ? "chr" : "",
-            S_ISREG(st.st_mode) ? "reg" : "", st.st_size);
+            S_ISCHR(st.st_mode) ? "chr" : "", S_ISREG(st.st_mode) ? "reg" : "",
+            st.st_size);
 
         int fd = ::open(dev.c_str(), O_RDONLY);
         if (fd < 0)
@@ -134,8 +132,8 @@ void clearForceRo()
             continue;
         }
         const std::string name = fs::path(dev).filename().string();
-        if (name.rfind("mmcblk", 0) != 0
-            || name.find("boot") == std::string::npos)
+        if (name.rfind("mmcblk", 0) != 0 ||
+            name.find("boot") == std::string::npos)
         {
             continue;
         }
@@ -221,9 +219,8 @@ std::optional<std::string> stageResolvedConfig(const std::string& src_path)
     int fd = ::mkstemp(tmp_path);
     if (fd < 0)
     {
-        std::cerr << std::format(
-            "emmc-uenv: mkstemp(/run/...) failed: {}\n",
-            std::strerror(errno));
+        std::cerr << std::format("emmc-uenv: mkstemp(/run/...) failed: {}\n",
+                                 std::strerror(errno));
         return std::nullopt;
     }
     const std::string content = resolved.str();
@@ -277,8 +274,8 @@ struct UbootCtx
         else if (open_ret != 0)
         {
             std::cerr << std::format(
-                "emmc-uenv: libuboot_open({}) failed (ret={})\n",
-                staged_path, open_ret);
+                "emmc-uenv: libuboot_open({}) failed (ret={})\n", staged_path,
+                open_ret);
             diagnoseLibubootOpen(staged_path, open_ret);
             // libuboot_open grabs the flock unconditionally before
             // libuboot_load. libuboot_exit doesn't release it; if we skip
