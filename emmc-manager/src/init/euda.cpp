@@ -116,15 +116,29 @@ EudaResult eudaConfig(std::string_view device, bool recheck)
 
     std::cerr << std::format(
         "euda: state{} device={} PARTITION_SETTING_COMPLETED={} "
-        "ENH_SIZE_MULT={} ENH_START_ADDR=0x{:08x} MAX_ENH_SIZE_MULT={} "
-        "HC_WP_GRP_SIZE={} HC_ERASE_GRP_SIZE={} unit={}B programmed={}B "
-        "expected={}B real_size={}B (SEC_COUNT={})\n",
-        recheck ? " (post-reset recheck)" : "", device, completed, programmed,
-        enh_start_addr, max_enh, hc_wp, hc_erase, unit_bytes, programmed_bytes,
-        expected_bytes, real_size_bytes, sec_count);
+        "PARTITIONS_ATTRIBUTE=0x{:02x} ENH_SIZE_MULT={} "
+        "ENH_START_ADDR=0x{:08x} MAX_ENH_SIZE_MULT={} HC_WP_GRP_SIZE={} "
+        "HC_ERASE_GRP_SIZE={} unit={}B programmed={}B expected={}B "
+        "real_size={}B (SEC_COUNT={})\n",
+        recheck ? " (post-reset recheck)" : "", device, completed,
+        partitions_attribute, programmed, enh_start_addr, max_enh, hc_wp,
+        hc_erase, unit_bytes, programmed_bytes, expected_bytes, real_size_bytes,
+        sec_count);
 
     if (completed != 0 && programmed == target)
     {
+        if (completed == 0x01 &&
+            partitions_attribute != emmc::extcsd::kPartitionsAttributeEnhUsr)
+        {
+            std::cerr << std::format(
+                "euda: legacy pre-fix EUDA state detected "
+                "(PARTITION_SETTING_COMPLETED=1, ENH_SIZE_MULT=MAX, "
+                "PARTITIONS_ATTRIBUTE=0x{:02x} != 0x01); treating eMMC as "
+                "usable and skipping SEC_COUNT activation check\n",
+                partitions_attribute);
+            return EudaResult::Ok;
+        }
+
         // EXT_CSD writes succeeded and the bits are sticky. The card
         // is fully activated only when SEC_COUNT reflects the new
         // enhanced-only addressable area. Until then the chip is
