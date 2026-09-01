@@ -8,6 +8,7 @@
 #include "utilities.hpp"
 
 #include <systemd/sd-daemon.h>
+#include <unistd.h>
 
 #include <array>
 #include <filesystem>

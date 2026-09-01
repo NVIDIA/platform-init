@@ -156,7 +156,7 @@ static int create_new_dump(sdbusplus::bus_t& bus, const std::string& ctrl,
         m.append(params);
         auto reply = bus.call(m);
 
-        sdbusplus::message::object_path entry;
+        sdbusplus::object_path entry;
         reply.read(entry);
         const std::string& s = entry.str;
         uint16_t entry_id =
