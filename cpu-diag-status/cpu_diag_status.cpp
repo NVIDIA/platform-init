@@ -44,7 +44,7 @@ enum class DiagStatus : uint8_t
 
 struct DiagMonitor
 {
-    sdbusplus::bus::bus bus{sdbusplus::bus::new_system()};
+    sdbusplus::bus_t bus{sdbusplus::bus::new_system()};
     int heartbeatCount{0};
 
     DiagStatus getStatus()
