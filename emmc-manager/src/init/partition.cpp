@@ -16,6 +16,7 @@
 #include "emmc-config.h"
 #include "emmc-init.h"
 #include "emmc-ioctl.h"
+#include "emmc-layout-ondisk.h"
 #include "emmc-util.h"
 
 #include <fcntl.h>
@@ -149,47 +150,24 @@ bool createPartitions(std::string_view device, uint64_t total_sectors)
     }
 
     // Idempotent: skip only if *every* Primary and Logical node from the
-    // configured layout is already present in sysfs (the Extended is a
-    // metadata-only MBR slot and has no node). Matches the legacy
-    // obmc-emmc.sh::check_partition contract — declaring "exists" only
-    // when the MBR *and* the full EBR chain have landed and the kernel
-    // has populated each partition node. Checking only primaries[0]
-    // would short-circuit after a partial write that wrote the MBR but
-    // not all EBRs, leaving p5..p7 missing.
+    // configured layout is present in sysfs AND carries the size the layout
+    // asks for (the Extended is a metadata-only MBR slot and has no node).
     //
-    // base_name derived from `device` (basename of "/dev/mmcblkN") rather
-    // than hardcoded so this stays correct on any future eMMC device name.
-    std::error_code ec;
-    std::string_view base_name = device;
-    if (auto slash = base_name.rfind('/'); slash != std::string_view::npos)
-    {
-        base_name.remove_prefix(slash + 1);
-    }
-    bool all_present = true;
-    for (const auto& p : emmc::layout::kPartitions)
-    {
-        if (p.type == EmmcPart::Type::Extended)
-        {
-            continue;
-        }
-        const std::string sysfs = std::format("/sys/block/{}/{}p{}/size",
-                                              base_name, base_name, p.num);
-        if (!std::filesystem::exists(sysfs, ec))
-        {
-            std::cerr << std::format(
-                "partition: sysfs node {} missing; full layout will be "
-                "written\n",
-                sysfs);
-            all_present = false;
-            break;
-        }
-    }
-    if (all_present)
+    // Presence alone is not sufficient. It satisfies the legacy
+    // obmc-emmc.sh::check_partition contract — the MBR *and* the full EBR
+    // chain have landed and the kernel has populated each node — but it also
+    // accepts a complete table written to some *other* geometry, which the
+    // monitor then rejects on size and tries to correct by rebooting, with
+    // nothing in this boot acting on the difference. Both binaries now ask
+    // emmc::layout::onDiskState(), so the two can no longer disagree.
+    if (emmc::layout::onDiskState(device) == emmc::layout::OnDiskState::Match)
     {
         std::cerr
             << "partition: existing layout detected; skipping repartition\n";
         return true;
     }
+    std::cerr << "partition: layout absent or does not match the configured "
+                 "geometry; full layout will be written\n";
 
     // Total sectors needed = first primary's size + remaining primaries +
     // (each logical + its EBR overhead).
