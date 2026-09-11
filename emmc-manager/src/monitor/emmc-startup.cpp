@@ -5,6 +5,7 @@
 #include "emmc-format.h"
 #include "emmc-init.h"
 #include "emmc-ioctl.h"
+#include "emmc-layout-ondisk.h"
 #include "emmc-monitor.h"
 #include "emmc-redfish-log.h"
 #include "emmc-uenv.h"
@@ -271,22 +272,16 @@ void auditPartitionLayout()
     }
 }
 
+// Delegates to the shared check so this daemon and nvidia-emmc-init can
+// never disagree about whether the on-disk geometry is acceptable. When
+// they did, init skipped the repartition and the monitor kept asking for
+// one, and the board rebooted on every boot without ever converging.
 RepartitionResult runRepartitionCheck()
 {
-    for (const auto& p : emmc::layout::kPartitions)
-    {
-        if (p.type == emmc::layout::EmmcPart::Type::Extended)
-        {
-            continue;
-        }
-        unsigned long long actual = readSysfsUll(partSysfsSizePath(p.num));
-        if (actual == 0 ||
-            sizeRatio(actual, p.sectors) > kPartitionSizeTolerance)
-        {
-            return RepartitionResult::Mismatch;
-        }
-    }
-    return RepartitionResult::Healthy;
+    return emmc::layout::onDiskState(kEmmcDevice) ==
+                   emmc::layout::OnDiskState::Match
+               ? RepartitionResult::Healthy
+               : RepartitionResult::Mismatch;
 }
 
 bool reformatSinglePartition(std::string_view path)

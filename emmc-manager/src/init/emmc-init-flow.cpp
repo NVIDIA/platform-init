@@ -5,6 +5,7 @@
 #include "emmc-format.h"
 #include "emmc-init.h"
 #include "emmc-ioctl.h"
+#include "emmc-layout-ondisk.h"
 #include "emmc-uenv.h"
 #include "emmc-util.h"
 
@@ -171,6 +172,35 @@ void consumeRepartition(std::string_view device, uint64_t sectors)
     wipeWholeDevice(device, sectors);
 }
 
+// Erase when the table on the device disagrees with the configured layout,
+// so that createPartitions() below writes a fresh one in *this* boot.
+//
+// Without this, a device carrying a complete table of the wrong geometry
+// (an older layout, or one written by another image on the alternate flash
+// slot) was accepted here and rejected by the monitor, which set
+// emmc_repartition and rebooted. That only converged if the next boot ran
+// the same image; otherwise it repeated indefinitely, erasing the eMMC on
+// every cycle. Fixing the geometry here costs the same erase but no reboot,
+// and terminates regardless of which image boots next.
+//
+// Only Mismatch — a partition that is present and carries a size the layout
+// does not allow — is erased. Absent and Incomplete are left to
+// createPartitions(), which writes the table without erasing, as it always
+// has. That keeps a missing sysfs node, which can be a partial write but can
+// equally be an enumeration timing artefact, from costing the user their
+// eMMC contents.
+void repartitionIfLayoutMismatch(std::string_view device, uint64_t sectors)
+{
+    if (emmc::layout::onDiskState(device) !=
+        emmc::layout::OnDiskState::Mismatch)
+    {
+        return;
+    }
+    std::cerr << "nvidia-emmc-init: on-disk layout does not match the "
+                 "configured geometry — secure-erasing for a fresh layout\n";
+    wipeWholeDevice(device, sectors);
+}
+
 int programEuda(std::string_view device)
 {
     switch (eudaConfigWithHwReset(device))
@@ -291,6 +321,7 @@ int run(std::string_view device)
     consumeSecureErase(device, disk->sectors);
     consumeFullSecureErase(device, disk->sectors);
     consumeRepartition(device, disk->sectors);
+    repartitionIfLayoutMismatch(device, disk->sectors);
 
     if (int rc = programEuda(device); rc != kExitOk)
     {
