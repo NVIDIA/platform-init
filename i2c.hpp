@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstdint>
+#include <span>
 #include <string>
 
 namespace i2c
@@ -12,6 +13,16 @@ namespace i2c
 void rebind_controller(const std::string_view number);
 void new_device(unsigned int bus, unsigned int address,
                 std::string_view device_type);
+
+// Source: i2ctransfer -f -y <bus> w<n>@<addr> <write…> r<m>  (I2C_RDWR ioctl)
+// Either span may be empty. Used instead of RawDevice because the addresses
+// reached this way are already claimed by a kernel driver, so RawDevice's
+// I2C_SLAVE ioctl fails with EBUSY in the constructor — the reason the shell
+// passed -f. The SMBus accessors are additionally limited to a one-byte
+// command code, which cannot address the CPLD's two-byte register pair.
+// Returns 0, or a positive errno.
+int raw_transfer(unsigned int bus, uint8_t address,
+                 std::span<const uint8_t> write, std::span<uint8_t> read);
 
 // a simple RAII wrapper for raw i2c comms
 struct RawDevice

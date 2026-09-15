@@ -4,6 +4,7 @@
 #include "gpio.hpp"
 #include "i2c.hpp"
 #include "nvidia.hpp"
+#include "platform_utils.hpp"
 #include "utilities.hpp"
 
 #include <fcntl.h>
@@ -18,7 +19,7 @@
 #include <string_view>
 #include <utility>
 
-constexpr std::array<std::pair<std::string_view, int (*)()>, 12> init_functions{
+constexpr std::array<std::pair<std::string_view, int (*)()>, 15> init_functions{
     {
         {"nvidia-gb200", nvidia::init_gb200_base},
         {"nvidia-gb200-with-p2020", nvidia::init_gb200_with_p2020},
@@ -32,6 +33,10 @@ constexpr std::array<std::pair<std::string_view, int (*)()>, 12> init_functions{
         {"nvidia-vr-nvl-hmc-ast2700", nvidia::init_vr_nvl_hmc_ast2700},
         {"nvidia-vr-e5010-bmc", nvidia::init_vr_e5010_bmc},
         {"nvidia-vr-quark-bmc", nvidia::init_vr_quark_bmc},
+        {"nvidia-switch-rosalind-bmc", nvidia::init_switch_rosalind_bmc},
+        {"nvidia-switch-spc6-ast2600-bmc",
+         nvidia::init_switch_spc6_ast2600_bmc},
+        {"nvidia-switch-ast2700-bmc", nvidia::init_switch_ast2700_bmc},
     }};
 
 int main(int argc, char** argv)

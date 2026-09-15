@@ -5,13 +5,18 @@
 
 #include <fcntl.h>
 #include <linux/i2c-dev.h>
+#include <linux/i2c.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
 
+#include <array>
+#include <cerrno>
+#include <cstring>
 #include <filesystem>
 #include <format>
 #include <fstream>
 #include <iostream>
+#include <limits>
 
 extern "C"
 {
@@ -80,6 +85,70 @@ void new_device(unsigned int bus, unsigned int address,
     new_device.close();
 
     std::cerr << std::format("{} device created at bus {}\n", device_type, bus);
+}
+
+int raw_transfer(unsigned int bus, uint8_t address,
+                 std::span<const uint8_t> write, std::span<uint8_t> read)
+{
+    if (write.empty() && read.empty())
+    {
+        return EINVAL;
+    }
+
+    // i2c_msg::len is 16-bit, so a longer span would be silently truncated.
+    constexpr auto max_len = std::numeric_limits<decltype(i2c_msg::len)>::max();
+    if (write.size() > max_len || read.size() > max_len)
+    {
+        return EINVAL;
+    }
+
+    std::string dev_path = std::format("/dev/i2c-{}", bus);
+    int fd = open(dev_path.c_str(), O_RDWR);
+    if (fd < 0)
+    {
+        int err = errno;
+        std::cerr << std::format("failed to open {}\n", dev_path);
+        return err;
+    }
+
+    std::array<i2c_msg, 2> msgs{};
+    unsigned int count = 0;
+    if (!write.empty())
+    {
+        msgs[count].addr = address;
+        msgs[count].flags = 0;
+        msgs[count].len = write.size();
+        // The kernel does not modify the buffer of a write message; the cast
+        // is needed only because i2c_msg::buf is not const-qualified.
+        msgs[count].buf = const_cast<uint8_t*>(write.data());
+        count++;
+    }
+    if (!read.empty())
+    {
+        msgs[count].addr = address;
+        msgs[count].flags = I2C_M_RD;
+        msgs[count].len = read.size();
+        msgs[count].buf = read.data();
+        count++;
+    }
+
+    i2c_rdwr_ioctl_data data{.msgs = msgs.data(), .nmsgs = count};
+
+    // I2C_RDWR returns the number of messages transferred, not a status. A
+    // short count on the write-then-read pair leaves the read buffer as the
+    // caller supplied it, which a zero-initialised one cannot be told apart
+    // from a real read.
+    int rc = ioctl(fd, I2C_RDWR, &data);
+    int err = rc < 0 ? errno : static_cast<unsigned>(rc) != count ? EIO : 0;
+    close(fd);
+
+    if (err != 0)
+    {
+        std::cerr << std::format(
+            "i2c transfer to bus {} address 0x{:02x} failed: {}\n", bus,
+            address, strerror(err));
+    }
+    return err;
 }
 
 RawDevice::RawDevice(size_t bus, uint8_t address)
