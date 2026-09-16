@@ -637,8 +637,6 @@ int init_switch_rosalind_bmc()
         // Source: the 20 check_n_link calls at the end of bmc_init_sysfs_gpio
         hw_mgmt_link_gpio(rosalind_sysfs_gpios);
 
-        hw_mgmt_init_eth("switch-rosalind-bmc");
-
         rosalind_init_usb_smbus_bridge();
         bmc_init_bootargs();
 

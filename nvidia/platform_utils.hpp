@@ -1455,17 +1455,6 @@ inline void write_cpu_type(std::string_view log_prefix)
                              log_prefix);
 }
 
-// Source: bmc_init_eth (hw-management-helpers-common.sh:557) — ~120 lines of
-// Marvell/Realtek MDIO register pokes and link checks, kept in shell. It is a
-// shell function rather than a script, so it has to be sourced before it can be
-// called. Every switch platform invokes it with the same command.
-inline void hw_mgmt_init_eth(std::string_view log_prefix)
-{
-    shell_out("bash -c '. /usr/bin/hw-management-helpers-common.sh"
-              " && bmc_init_eth'",
-              log_prefix);
-}
-
 // Source: bmc_init_main — either the commanded power-down or the power-button
 // halt means the host is not driving the I2C tree, so the BMC may take it.
 // Returns whether the CPU is off, which a caller may also need in order to
