@@ -1300,12 +1300,6 @@ inline void uboot_env_set(std::string_view key, std::string_view value = {})
 // has been through this once does not rewrite the U-Boot env on every boot.
 inline void bmc_init_bootargs()
 {
-    // Standalone BMC system, no system EEPROM.
-    if (!std::filesystem::is_directory("/sys/class/net/eth1"))
-    {
-        uboot_env_set("bootargs", "console=ttyS4,115200n8 root=/dev/ram rw");
-    }
-
     const auto bootargs = uboot_env_get("bootargs");
     if (bootargs.contains("ttyS2") && bootargs.contains("46:44:8a:c8:7f:bf"))
     {
