@@ -20,6 +20,9 @@ platform_srcs = files(
     'nvidia/gb200nvl_bmc.cpp',
     'nvidia/gb200nvl_hmc.cpp',
     'nvidia/nvl32.cpp',
+    'nvidia/switch_ast2700_bmc.cpp',
+    'nvidia/switch_rosalind_bmc.cpp',
+    'nvidia/switch_spc6_ast2600_bmc.cpp',
     'nvidia/vr_c2_bmc.cpp',
     'nvidia/vr_e5010_bmc.cpp',
     'nvidia/vr_nvl_bmc.cpp',
@@ -53,7 +56,9 @@ script_base = 'nvidia/scripts/platforms'
 
 subdir('emmc-manager')
 
-if platform_name.contains('bmc')
+# No switch image installs the cpu-diag-status recipe that ships the script
+# this unit runs, so building it here would install an inert unit.
+if platform_name.contains('bmc') and not platform_name.contains('switch')
     subdir('cpu-diag-status')
 endif
 
@@ -61,4 +66,10 @@ if platform_name.contains('vr-nvl-hmc')
     subdir('i2c-dump-server')
     subdir('hmc-temp-sensor')
     subdir('hmc-post-boot-cfg')
+endif
+
+# Only spc6-ast2600-bmc sets BIND_I3C_ON_BIOS_BOOT=1; elsewhere the handler
+# defaults it to 0, so the unit would never be started.
+if platform_name.contains('spc6-ast2600')
+    subdir('bind-i3c')
 endif
