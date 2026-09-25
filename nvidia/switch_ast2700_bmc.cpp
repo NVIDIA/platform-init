@@ -528,13 +528,19 @@ int init_switch_ast2700_bmc()
         }
 
         // Source: bmc_ready_sequence:429-438. `a2d_leakage_config.sh` is 1261
-        //         lines of JSON-driven leak-detector config, kept in shell. It
-        //         logs at err level when its JSON is absent, so HIDs reading
-        //         leak detectors from the MCU over NSM skip the pass entirely.
-        if (platform_feature("LEAK_DETECTION_SOURCE") == "mcu")
+        //         lines of JSON-driven leak-detector config, kept in shell.
+        //         Skip it when detectors come from the MCU over NSM or when
+        //         the platform has no leak detectors.
+        const auto leakSource = platform_feature("LEAK_DETECTION_SOURCE");
+        if (leakSource == "mcu")
         {
             std::cerr << "switch-ast2700-bmc: leak detection comes from the "
                          "MCU, skipping A2D configuration\n";
+        }
+        else if (leakSource == "none")
+        {
+            std::cerr << "switch-ast2700-bmc: no leak detectors on this "
+                         "platform, skipping A2D configuration\n";
         }
         else
         {
