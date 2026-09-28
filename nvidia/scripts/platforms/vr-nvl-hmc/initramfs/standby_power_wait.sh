@@ -5,11 +5,13 @@
 # This script runs in initramfs before obmc-init.sh to ensure standby power
 # is available by probing for I2C devices that appear when power is ready.
 #
-# Board 0 (bus 1) is required - timeout waiting for it is a standby power failure.
-# Board 1 (bus 7) is optional - absence is noted but not a failure.
+# Board 0 (bus 1 by default) is required - timeout waiting for it is a standby power failure.
+# Board 1 (bus 7 by default) is optional - absence is noted but not a failure.
 #
 # On timeout, creates marker files that systemd services can use with
 # ConditionPathExists directives.
+#
+# Platforms can override the configuration below in /etc/standby_power_wait.conf.
 #
 
 # Log file location
@@ -30,10 +32,21 @@ BRD1_HPM_FRU_ADDR="0x50"
 # Timing configuration
 POLL_INTERVAL=1
 BRD0_TIMEOUT_SECONDS=120
-BRD0_MAX_ATTEMPTS=$((BRD0_TIMEOUT_SECONDS / POLL_INTERVAL))
 
 # Board 1 gets shorter timeout (5 seconds) since it's optional and should come up with BRD0
 BRD1_MAX_ATTEMPTS=5
+
+# Re-bind the IO expanders and HPM FRU once a board is detected
+REBIND_DEVICES=1
+
+# Per-platform overrides of the configuration above
+CONFIG_FILE="/etc/standby_power_wait.conf"
+if [ -r "$CONFIG_FILE" ]; then
+    # shellcheck source=/dev/null
+    . "$CONFIG_FILE"
+fi
+
+BRD0_MAX_ATTEMPTS=$((BRD0_TIMEOUT_SECONDS / POLL_INTERVAL))
 
 # Marker file locations
 STANDBY_POWER_FAILURE="/run/standby_power_failure"
@@ -149,11 +162,13 @@ wait_and_bind_board() {
         if check_i2c_device "$bus" "$iox0_addr"; then
             log "$board_name detected after $((attempt * POLL_INTERVAL))s"
 
-            # Trigger driver re-bind for both IO expanders (DT-defined devices)
-            bind_i2c_device "$bus" "$iox0_addr" "pca953x"
-            bind_i2c_device "$bus" "$iox1_addr" "pca953x"
-            # Trigger driver re-bind for HPM FRU
-            bind_i2c_device "$bus" "$hpm_fru_addr" "at24"
+            if [ "$REBIND_DEVICES" = 1 ]; then
+                # Trigger driver re-bind for both IO expanders (DT-defined devices)
+                bind_i2c_device "$bus" "$iox0_addr" "pca953x"
+                bind_i2c_device "$bus" "$iox1_addr" "pca953x"
+                # Trigger driver re-bind for HPM FRU
+                bind_i2c_device "$bus" "$hpm_fru_addr" "at24"
+            fi
 
             return 0
         fi
@@ -181,6 +196,9 @@ log_debug "Checking i2cdetect availability..."
 log_debug "$(which i2cdetect 2>&1)"
 
 log "Starting standby power detection..."
+if [ -r "$CONFIG_FILE" ]; then
+    log "Using overrides from $CONFIG_FILE"
+fi
 log "BRD0 (required): bus $BRD0_BUS, timeout ${BRD0_TIMEOUT_SECONDS}s"
 log "BRD1 (optional): bus $BRD1_BUS, timeout $((BRD1_MAX_ATTEMPTS * POLL_INTERVAL))s"
 

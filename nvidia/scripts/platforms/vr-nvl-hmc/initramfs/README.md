@@ -21,6 +21,19 @@ then binds the drivers via sysfs. Handles two boards independently:
 - **BRD0 (bus 1)**: Required - timeout is a standby power failure
 - **BRD1 (bus 7)**: Optional - absence is noted but not a failure
 
+## Platform Overrides
+
+`standby_power_wait.sh` sources `/etc/standby_power_wait.conf` if the initramfs
+has one, so a platform can override the bus numbers, addresses and timeouts, or
+set `REBIND_DEVICES=0` when the kernel binds the devices on its own:
+
+```sh
+BRD0_BUS="80"
+BRD1_BUS="81"
+BRD1_MAX_ATTEMPTS=30
+REBIND_DEVICES=0
+```
+
 ## Boot Flow
 
 ```text
