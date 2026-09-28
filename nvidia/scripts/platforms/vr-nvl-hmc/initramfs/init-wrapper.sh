@@ -20,7 +20,10 @@ mount -t tmpfs tmpfs /run -o mode=755,nodev
 # On timeout, creates /run/standby_power_failure; logs to /run/standby_power_wait.log
 /standby_power_wait.sh
 
-/rtc-sync.sh > /dev/kmsg 2>&1
+# Platforms with no external RTC leave rtc-sync.sh out of the initramfs.
+if [ -x /rtc-sync.sh ]; then
+    /rtc-sync.sh > /dev/kmsg 2>&1
+fi
 
 # Continue with main init script, passing through any arguments
 exec /obmc-init.sh "$@"

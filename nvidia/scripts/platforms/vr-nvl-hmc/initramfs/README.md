@@ -11,7 +11,8 @@ IO expander drivers.
 ### `init-wrapper.sh`
 
 Entry point (`/init`) in initramfs. Mounts `/run` tmpfs and calls
-`standby_power_wait.sh` before executing the main `obmc-init.sh`.
+`standby_power_wait.sh`, then `rtc-sync.sh` if the initramfs has one, before
+executing the main `obmc-init.sh`. Platforms with no external RTC omit it.
 
 ### `standby_power_wait.sh`
 
