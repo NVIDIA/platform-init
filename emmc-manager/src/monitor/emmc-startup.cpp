@@ -333,6 +333,13 @@ int startup()
         return kStartupEmmcMissing;
     }
 
+    if (std::filesystem::exists(kEudaPowerCycleRequired))
+    {
+        std::cerr << "monitor: EUDA activation requires a power cycle; "
+                     "skipping eMMC startup recovery\n";
+        return kStartupOk;
+    }
+
     mountPartitions();
     verifyRwfsOverlay();
     checkPreEol(kEmmcDevice);

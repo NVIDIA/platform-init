@@ -177,6 +177,13 @@ bool triggerAutoRecovery(std::string_view mount_path, std::string_view reason)
 {
     using namespace std::chrono_literals;
 
+    if (std::filesystem::exists(kEudaPowerCycleRequired))
+    {
+        std::cerr << "monitor: EUDA activation requires a power cycle; "
+                     "suppressing eMMC auto-recovery\n";
+        return false;
+    }
+
     int attempts = uenv::getCounter("emmc_reboot_recovery", kRrEnvConfig);
     if (attempts >= kMaxRebootRecoveryAttempts)
     {
@@ -231,6 +238,11 @@ bool triggerAutoRecovery(std::string_view mount_path, std::string_view reason)
 
 void monitorTick()
 {
+    if (std::filesystem::exists(kEudaPowerCycleRequired))
+    {
+        return;
+    }
+
     bool all_healthy = true;
     for (const auto& p : emmc::layout::kPartitions)
     {
