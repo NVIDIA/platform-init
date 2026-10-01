@@ -14,6 +14,7 @@
 #include <cstring>
 #include <filesystem>
 #include <format>
+#include <fstream>
 #include <iostream>
 #include <string_view>
 
@@ -203,6 +204,14 @@ void repartitionIfLayoutMismatch(std::string_view device, uint64_t sectors)
 
 int programEuda(std::string_view device)
 {
+    std::error_code ec;
+    std::filesystem::remove(kEudaPowerCycleRequired, ec);
+    if (ec)
+    {
+        std::cerr << std::format("nvidia-emmc-init: failed to remove {}: {}\n",
+                                 kEudaPowerCycleRequired, ec.message());
+    }
+
     switch (eudaConfigWithHwReset(device))
     {
         case EudaResult::Ok:
@@ -213,6 +222,12 @@ int programEuda(std::string_view device)
         case EudaResult::NotActivated:
             std::cerr << "nvidia-emmc-init: EUDA not activated after HW "
                          "reset retries\n";
+            if (std::ofstream marker{kEudaPowerCycleRequired}; !marker)
+            {
+                std::cerr << std::format(
+                    "nvidia-emmc-init: failed to create {}\n",
+                    kEudaPowerCycleRequired);
+            }
             return kExitEudaNotActivated;
     }
     return kExitEudaFailed; // unreachable

@@ -29,6 +29,8 @@ inline std::string rwfsDevicePath()
 
 inline constexpr const char* kRwfsMount = "/run/initramfs/rw";
 inline constexpr const char* kRwfsBackupImage = "/run/rwfs-backup.img";
+inline constexpr const char* kEudaPowerCycleRequired =
+    "/run/emmc-euda-power-cycle-required";
 
 inline constexpr const char* kMonitorStateDir = "/var/lib/nvidia-emmc-monitor";
 inline constexpr const char* kFwEnvConfig = "/etc/fw_env.config";
