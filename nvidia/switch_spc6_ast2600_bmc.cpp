@@ -216,6 +216,11 @@ int init_switch_spc6_ast2600_bmc()
             hw_mgmt_write_config("bom", bom);
         }
 
+        // Source: get_system_hw_rev. Writes config/rev_id from SYS_FRU Board
+        //         Extra (the two extras immediately before HID, e.g. 18a1).
+        write_system_hw_rev(spc6_2600_vpd_eeprom, hid, spc6_2600_bom_hids,
+                            "switch-spc6-ast2600-bmc");
+
         // Source: `a2d_leakage_config.sh` — 1261 lines of JSON-driven
         //         leak-detector configuration, kept in shell.
         shell_out("a2d_leakage_config.sh", "switch-spc6-ast2600-bmc");

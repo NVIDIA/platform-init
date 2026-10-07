@@ -108,8 +108,9 @@ static const std::array<SysfsGpioPin, 20> rosalind_sysfs_gpios{{
 static constexpr int rosalind_gpio_stby_pg = 612;
 
 // Source: `echo 24c512 0x51 > /sys/bus/i2c/devices/i2c-4/new_device`
-//         (bmc_ready_sequence). AST2600 and AST2700 do this from
-//         bmc-early-i2c-init.service instead; Rosalind still does it here.
+//         (bmc_ready_sequence). Rosalind's bmc-early-i2c-devices.json now
+//         creates this device from bmc-early-i2c-init.service as well;
+//         eeprom_init() is idempotent and remains as a fallback.
 static constexpr std::array<EepromDevice, 1> rosalind_vpd_device{{
     {4, 0x51, "24c512", "BMC VPD", false},
 }};
@@ -696,6 +697,11 @@ int init_switch_rosalind_bmc()
                                      bom);
             hw_mgmt_write_config("bom", bom);
         }
+
+        // Source: get_system_hw_rev. Writes config/rev_id from SYS_FRU Board
+        //         Extra (the two extras immediately before HID, e.g. 18a1).
+        write_system_hw_rev(rosalind_vpd_eeprom, hid, rosalind_bom_hids,
+                            "switch-rosalind-bmc");
 
         // Source: sync_cartridge_data_to_cpld, run only while the host CPU is
         //         down, i.e. while the BMC owns the I2C tree. Non-fatal: the
