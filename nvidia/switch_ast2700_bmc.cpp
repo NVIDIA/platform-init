@@ -355,11 +355,20 @@ static std::string ast2700_dt_hw_id_fallback()
     return {};
 }
 
+struct Ast2700HwId
+{
+    std::string value;
+    bool from_dt_fallback = false;
+};
+
 // Source: get_system_hw_id (switch-ast2700-bmc_ready.sh:284-311)
-// Returns the HID, or an empty string when neither the VPD nor the device tree
+// Returns the HID, or an empty value when neither the VPD nor the device tree
 // yields a valid one. The shell returned 1 there but no caller checked it, so
 // init carries on with no hid file and get_system_hw_bom writes no bom either.
-static std::string ast2700_read_hw_id()
+// from_dt_fallback is set when the temporary HID197 device-tree path supplied
+// the value; callers must not treat VPD Board Extra (rev_id) as authoritative
+// on that path until the HID197 EEPROM layout is confirmed.
+static Ast2700HwId ast2700_read_hw_id()
 {
     const auto is_valid = [](std::string_view hid) {
         return hid.size() == 5 && hid.starts_with("HI") &&
@@ -389,11 +398,11 @@ static std::string ast2700_read_hw_id()
             "offset {} returned '{}'; using device-tree HID {}. Verify the "
             "HID197 VPD layout during bring-up and remove this fallback.\n",
             ast2700_vpd_eeprom, ast2700_vpd_hid_offset, vpd, dt_hw_id);
-        vpd = dt_hw_id;
+        return {.value = dt_hw_id, .from_dt_fallback = true};
     }
     // END TEMPORARY HID197 bring-up fallback.
 
-    return vpd;
+    return {.value = std::move(vpd)};
 }
 
 // ── Platform-local steps ──────────────────────────────────────────────────
@@ -479,20 +488,20 @@ int init_switch_ast2700_bmc()
 
         write_cpu_type("switch-ast2700-bmc");
 
-        const auto hid = ast2700_read_hw_id();
-        if (!hid.empty())
+        const auto hw_id = ast2700_read_hw_id();
+        if (!hw_id.value.empty())
         {
             std::cerr << std::format("switch-ast2700-bmc: system hardware Id "
                                      "is {}\n",
-                                     hid);
-            hw_mgmt_write_config("hid", hid);
+                                     hw_id.value);
+            hw_mgmt_write_config("hid", hw_id.value);
         }
 
         // Source: get_system_hw_bom. The record offset is found by scanning
         //         the first 128 bytes for a `V<digit>-` marker, which is what
         //         vpd_read_bom() does when no offset is given.
         if (const auto bom =
-                vpd_read_bom(ast2700_vpd_eeprom, hid, ast2700_bom_hids,
+                vpd_read_bom(ast2700_vpd_eeprom, hw_id.value, ast2700_bom_hids,
                              std::nullopt, ast2700_vpd_bom_size);
             !bom.empty())
         {
@@ -500,6 +509,21 @@ int init_switch_ast2700_bmc()
                                      "record is {}\n",
                                      bom);
             hw_mgmt_write_config("bom", bom);
+        }
+
+        // Source: get_system_hw_rev. Writes config/rev_id from SYS_FRU Board
+        //         Extra (the two extras immediately before HID, e.g. 18a1).
+        // Skip when HID came from the temporary HID197 device-tree fallback:
+        // the VPD extras layout is unconfirmed on that path.
+        if (hw_id.from_dt_fallback)
+        {
+            std::cerr << "switch-ast2700-bmc: skipping rev_id; HID came from "
+                         "the temporary HID197 device-tree fallback\n";
+        }
+        else
+        {
+            write_system_hw_rev(ast2700_vpd_eeprom, hw_id.value,
+                                ast2700_bom_hids, "switch-ast2700-bmc");
         }
 
         // Source: bmc_ready_sequence:411-420. Copies rack id, topology id,

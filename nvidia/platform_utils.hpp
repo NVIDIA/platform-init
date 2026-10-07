@@ -1894,6 +1894,169 @@ inline std::string vpd_read_bom(
     return bom;
 }
 
+// Source: fru_rev_id_from_eeprom (hw-management-helpers-common.sh)
+// Parse IPMI FRU Board Extra fields. RevId is the two custom extras immediately
+// before the HID field (e.g. "18" + "A1" -> "18a1").
+//
+// One sequential 2KiB read: seeking on at24 sysfs re-reads from offset 0 and
+// races the parallel ftgmac100 probe (bmc-eth-driver TimeoutStartSec=60).
+inline std::string fru_rev_id_from_eeprom(std::string_view eeprom_path)
+{
+    constexpr size_t fru_prefix = 2048;
+    const auto buf =
+        detail::read_file_range(std::string{eeprom_path}, 0, fru_prefix);
+    if (buf.size() < 8)
+    {
+        return {};
+    }
+
+    const size_t board_off = static_cast<size_t>(buf[3]) * 8;
+    if (board_off + 1 >= buf.size())
+    {
+        return {};
+    }
+    const size_t board_len = static_cast<size_t>(buf[board_off + 1]) * 8;
+    if (board_len < 8 || board_off + board_len > buf.size())
+    {
+        return {};
+    }
+    const size_t area_end = board_off + board_len;
+
+    const auto field_text = [](std::span<const uint8_t> raw) {
+        std::string text;
+        text.reserve(raw.size());
+        for (const uint8_t c : raw)
+        {
+            if (c == 0x00 || c == '\r' || c == '\n')
+            {
+                continue;
+            }
+            text.push_back(static_cast<char>(c));
+        }
+        size_t begin = 0;
+        while (begin < text.size() &&
+               detail::is_whitespace(static_cast<uint8_t>(text[begin])))
+        {
+            ++begin;
+        }
+        size_t end = text.size();
+        while (end > begin &&
+               detail::is_whitespace(static_cast<uint8_t>(text[end - 1])))
+        {
+            --end;
+        }
+        return text.substr(begin, end - begin);
+    };
+
+    const auto is_hid_extra = [](std::string_view field) {
+        if (field.size() != 5 && field.size() != 6)
+        {
+            return false;
+        }
+        if (std::toupper(static_cast<unsigned char>(field[0])) != 'H' ||
+            std::toupper(static_cast<unsigned char>(field[1])) != 'I')
+        {
+            return false;
+        }
+        size_t digit0 = 2;
+        if (field.size() == 6)
+        {
+            if (std::toupper(static_cast<unsigned char>(field[2])) != 'D')
+            {
+                return false;
+            }
+            digit0 = 3;
+        }
+        return std::ranges::all_of(field.substr(digit0), [](unsigned char c) {
+            return std::isdigit(c) != 0;
+        });
+    };
+
+    std::vector<std::string> extras;
+    int field_idx = 0;
+    size_t pos = board_off + 6;
+    while (pos + 1 < area_end)
+    {
+        const uint8_t tl = buf[pos];
+        // 0xC1 end-of-fields; 0xFF padding/end used by Rosalind VPD.
+        if (tl == 0xC1 || tl == 0xFF)
+        {
+            break;
+        }
+        const size_t len = tl & 0x3f;
+        ++pos;
+        if (pos + len > area_end)
+        {
+            break;
+        }
+        if (field_idx >= 5)
+        {
+            // Keep empty extras: dropping them compresses FRU field order,
+            // so a blank extra before HID would pick the wrong pair or miss
+            // the two extras immediately before the HID field.
+            extras.push_back(
+                field_text(std::span<const uint8_t>{buf}.subspan(pos, len)));
+        }
+        pos += len;
+        ++field_idx;
+    }
+
+    int hid_i = -1;
+    for (size_t i = 0; i < extras.size(); ++i)
+    {
+        if (is_hid_extra(extras[i]))
+        {
+            hid_i = static_cast<int>(i);
+            break;
+        }
+    }
+    if (hid_i < 2)
+    {
+        return {};
+    }
+
+    std::string rev = extras[static_cast<size_t>(hid_i - 2)] +
+                      extras[static_cast<size_t>(hid_i - 1)];
+    std::string out;
+    out.reserve(rev.size());
+    for (const unsigned char c : rev)
+    {
+        if (detail::is_whitespace(c))
+        {
+            continue;
+        }
+        out.push_back(static_cast<char>(std::tolower(c)));
+    }
+    return out;
+}
+
+// Source: get_system_hw_rev (hw-management-helpers-common.sh)
+// Write $config_path/rev_id from SYS_FRU Board Extra (e.g. 18a1). HID
+// allow-list matches SKUs that already parse VPD BOM from EEPROM. Unknown
+// HIDs are a silent no-op, matching the shell case statement.
+inline void write_system_hw_rev(
+    std::string_view eeprom_path, std::string_view hid,
+    std::span<const std::string_view> allowed_hids, std::string_view log_prefix)
+{
+    if (eeprom_path.empty() ||
+        std::ranges::find(allowed_hids, hid) == allowed_hids.end())
+    {
+        return;
+    }
+
+    const auto rev = fru_rev_id_from_eeprom(eeprom_path);
+    if (rev.empty())
+    {
+        std::cerr << std::format("{}: [WARN] Could not parse system revision "
+                                 "Id from VPD EEPROM\n",
+                                 log_prefix);
+        return;
+    }
+    std::cerr << std::format("{}: system hardware revision Id is {}\n",
+                             log_prefix, rev);
+    hw_mgmt_write_config("rev_id", rev);
+}
+
 // ── Module loading ────────────────────────────────────────────────────────
 
 // Source: bmc_ready_common.sh:bmc_init_usb_smbus_bridge
