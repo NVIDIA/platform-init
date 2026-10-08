@@ -261,8 +261,7 @@ static void fan_controller_init()
         try
         {
             i2c::RawDevice dev{6, addr};
-            uint8_t val = 0;
-            dev.read_byte(0x00, val);
+            uint8_t val = dev.read_byte(0x00).value_or(0);
             dev.write_byte(0x00, static_cast<uint8_t>(val | 0x04));
         }
         catch (const std::exception& e)
@@ -320,8 +319,7 @@ static void fan_controller_init()
         try
         {
             i2c::RawDevice dev{6, addr};
-            uint8_t val = 0;
-            dev.read_byte(0x00, val);
+            uint8_t val = dev.read_byte(0x00).value_or(0);
             dev.write_byte(0x00, static_cast<uint8_t>(val & 0xfe));
         }
         catch (const std::exception& e)
@@ -416,8 +414,8 @@ static void enable_hmc_cpld_pex_signature_checking()
         try
         {
             i2c::RawDevice cpld{2, 0x4f};
-            uint8_t val = 0xff;
-            if (cpld.read_byte(0x00, val) == 0 && val == 0x00)
+            auto val_r = cpld.read_byte(0x00);
+            if (val_r && *val_r == 0x00)
             {
                 i2c::RawDevice hmc{1, 0x45};
                 hmc.write_byte(0x00, 0xd0);
@@ -498,8 +496,7 @@ int init_gb200nvl_bmc()
         try
         {
             i2c::RawDevice probe{9, 0x76};
-            uint8_t v = 0;
-            if (probe.read_byte(0x00, v) == 0)
+            if (probe.read_byte(0x00))
                 iox_bind(9, 0x76);
         }
         catch (...)
@@ -579,8 +576,7 @@ int init_gb200nvl_bmc()
         try
         {
             i2c::RawDevice probe{3, 0x57};
-            uint8_t v = 0;
-            if (probe.read_byte(0x00, v) == 0)
+            if (probe.read_byte(0x00))
                 i2c::new_device(3, 0x57, "24c128");
         }
         catch (...)

@@ -417,9 +417,10 @@ inline void rtc_detect(std::span<const unsigned> buses, uint8_t addr = 0x6f)
         try
         {
             i2c::RawDevice dev{bus, addr};
-            uint8_t id = 0;
-            if (dev.read_byte(0x10, id) != 0)
+            auto id_r = dev.read_byte(0x10);
+            if (!id_r)
                 continue;
+            uint8_t id = *id_r;
             for (const auto& rtc : rtc_variants)
             {
                 if (id != rtc.device_id)
