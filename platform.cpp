@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: 2025 NVIDIA
+// SPDX-FileCopyrightText: Copyright OpenBMC Authors
 
 #include "gpio.hpp"
 #include "i2c.hpp"
-#include "nvidia.hpp"
-#include "platform_utils.hpp"
+#include "intel/platforms.hpp"
+#include "nvidia/platforms.hpp"
 #include "utilities.hpp"
 
 #include <fcntl.h>
@@ -19,25 +19,27 @@
 #include <string_view>
 #include <utility>
 
-constexpr std::array<std::pair<std::string_view, int (*)()>, 15> init_functions{
-    {
-        {"nvidia-gb200", nvidia::init_gb200_base},
-        {"nvidia-gb200-with-p2020", nvidia::init_gb200_with_p2020},
-        {"nvidia-gb200nvl-bmc", nvidia::init_gb200nvl_bmc},
-        {"nvidia-gb200nvl-hmc", nvidia::init_gb200nvl_hmc},
-        {"nvidia-nvl32", nvidia::init_nvl32},
-        {"nvidia-vr-c2-bmc", nvidia::init_vr_c2_bmc},
-        {"nvidia-vr-nvl-bmc", nvidia::init_vr_nvl_bmc},
-        {"nvidia-vr-nvl-bmc-ast2700", nvidia::init_vr_nvl_bmc_ast2700},
-        {"nvidia-vr-nvl-hmc", nvidia::init_vr_nvl_hmc},
-        {"nvidia-vr-nvl-hmc-ast2700", nvidia::init_vr_nvl_hmc_ast2700},
-        {"nvidia-vr-e5010-bmc", nvidia::init_vr_e5010_bmc},
-        {"nvidia-vr-quark-bmc", nvidia::init_vr_quark_bmc},
-        {"nvidia-switch-rosalind-bmc", nvidia::init_switch_rosalind_bmc},
-        {"nvidia-switch-spc6-ast2600-bmc",
-         nvidia::init_switch_spc6_ast2600_bmc},
-        {"nvidia-switch-ast2700-bmc", nvidia::init_switch_ast2700_bmc},
-    }};
+constexpr auto init_functions =
+    std::to_array<std::pair<std::string_view, int (*)()>>(
+        {{"intel-acrp", intel::init_acrp},
+         {"intel-jcrp", intel::init_jcrp},
+         {"nvidia-gb200", nvidia::init_gb200_base},
+         {"nvidia-gb200-with-p2020", nvidia::init_gb200_with_p2020},
+         {"nvidia-gb200nvl-bmc", nvidia::init_gb200nvl_bmc},
+         {"nvidia-gb200nvl-hmc", nvidia::init_gb200nvl_hmc},
+         {"nvidia-nvl32", nvidia::init_nvl32},
+         {"nvidia-vr-c2-bmc", nvidia::init_vr_c2_bmc},
+         {"nvidia-vr-nvl", nvidia::init_vr_nvl},
+         {"nvidia-vr-nvl-bmc", nvidia::init_vr_nvl_bmc},
+         {"nvidia-vr-nvl-bmc-ast2700", nvidia::init_vr_nvl_bmc_ast2700},
+         {"nvidia-vr-nvl-hmc", nvidia::init_vr_nvl_hmc},
+         {"nvidia-vr-nvl-hmc-ast2700", nvidia::init_vr_nvl_hmc_ast2700},
+         {"nvidia-vr-e5010-bmc", nvidia::init_vr_e5010_bmc},
+         {"nvidia-vr-quark-bmc", nvidia::init_vr_quark_bmc},
+         {"nvidia-switch-rosalind-bmc", nvidia::init_switch_rosalind_bmc},
+         {"nvidia-switch-spc6-ast2600-bmc",
+          nvidia::init_switch_spc6_ast2600_bmc},
+         {"nvidia-switch-ast2700-bmc", nvidia::init_switch_ast2700_bmc}});
 
 int main(int argc, char** argv)
 {

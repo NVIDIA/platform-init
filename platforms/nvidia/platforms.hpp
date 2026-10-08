@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: 2025 NVIDIA
+// SPDX-FileCopyrightText: Copyright OpenBMC Authors
 
 #pragma once
 
@@ -11,6 +11,7 @@ int init_gb200_with_p2020();
 int init_gb200nvl_bmc();
 int init_gb200nvl_hmc();
 int init_nvl32();
+int init_vr_nvl();
 
 int init_vr_c2_bmc();
 int init_vr_nvl_bmc();
