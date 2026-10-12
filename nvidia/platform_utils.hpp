@@ -1300,12 +1300,6 @@ inline void uboot_env_set(std::string_view key, std::string_view value = {})
 // has been through this once does not rewrite the U-Boot env on every boot.
 inline void bmc_init_bootargs()
 {
-    // Standalone BMC system, no system EEPROM.
-    if (!std::filesystem::is_directory("/sys/class/net/eth1"))
-    {
-        uboot_env_set("bootargs", "console=ttyS4,115200n8 root=/dev/ram rw");
-    }
-
     const auto bootargs = uboot_env_get("bootargs");
     if (bootargs.contains("ttyS2") && bootargs.contains("46:44:8a:c8:7f:bf"))
     {
@@ -1459,17 +1453,6 @@ inline void write_cpu_type(std::string_view log_prefix)
     std::cerr << std::format("{}: no \"CPU part\" line in /proc/cpuinfo; "
                              "cpu_type not written\n",
                              log_prefix);
-}
-
-// Source: bmc_init_eth (hw-management-helpers-common.sh:557) — ~120 lines of
-// Marvell/Realtek MDIO register pokes and link checks, kept in shell. It is a
-// shell function rather than a script, so it has to be sourced before it can be
-// called. Every switch platform invokes it with the same command.
-inline void hw_mgmt_init_eth(std::string_view log_prefix)
-{
-    shell_out("bash -c '. /usr/bin/hw-management-helpers-common.sh"
-              " && bmc_init_eth'",
-              log_prefix);
 }
 
 // Source: bmc_init_main — either the commanded power-down or the power-button
