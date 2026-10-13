@@ -184,8 +184,6 @@ int init_switch_spc6_ast2600_bmc()
         std::cerr << "switch-spc6-ast2600-bmc: GPIO sysfs initialization "
                      "complete\n";
 
-        hw_mgmt_init_eth("switch-spc6-ast2600-bmc");
-
         bmc_init_bootargs();
 
         // Source: bmc_init_main:442-449

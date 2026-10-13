@@ -469,8 +469,6 @@ int init_switch_ast2700_bmc()
         std::cerr << "switch-ast2700-bmc: GPIO sysfs initialization "
                      "complete\n";
 
-        hw_mgmt_init_eth("switch-ast2700-bmc");
-
         ast2700_init_bootargs();
 
         // Source: bmc_init_main:494-501
