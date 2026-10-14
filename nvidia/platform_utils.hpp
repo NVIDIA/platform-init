@@ -1527,10 +1527,12 @@ inline std::string sysfs_gpio_value_path(int number)
     return std::format("/sys/class/gpio/gpio{}/value", number);
 }
 
-// Export each line, then set direction and (for outputs carrying a value) the
-// output level. An already-exported line is not an error: the export write
-// fails with EBUSY, which is logged and skipped so a manual
-// `systemctl restart platform_init` is safe.
+// Export each line, then set direction. An already-exported line is not an
+// error: the export write fails with EBUSY, which is logged and skipped so a
+// manual `systemctl restart platform_init` is safe.
+//
+// An output with value 0 or 1 is programmed as "low" or "high". Writing "out"
+// first drives the line low, and a following value write then drives it high.
 inline void sysfs_gpio_apply(std::span<const SysfsGpioPin> pins)
 {
     for (const auto& pin : pins)
@@ -1557,28 +1559,31 @@ inline void sysfs_gpio_apply(std::span<const SysfsGpioPin> pins)
         if (pin.direction == SysfsGpioDir::Preserve)
             continue;
 
-        const auto* direction =
-            pin.direction == SysfsGpioDir::Out ? "out" : "in";
+        // Same choice as switch_gpio_set.sh bmc_init_sysfs_gpio: "low"/"high"
+        // apply the output level together with the direction.
+        const char* direction = "in";
+        if (pin.direction == SysfsGpioDir::Out)
+        {
+            if (pin.value && *pin.value == 0)
+            {
+                direction = "low";
+            }
+            else if (pin.value && *pin.value == 1)
+            {
+                direction = "high";
+            }
+            else
+            {
+                direction = "out";
+            }
+        }
         if (const int err = detail::sysfs_write(dir + "/direction", direction);
             err != 0)
         {
-            // As in the shell (`gpio_dir ... || true`), a direction failure
-            // does not stop the value write: on some expanders the line is
-            // usable even when the direction attribute is not writable.
+            // As in the shell (`gpio_dir ... || true`): log and continue.
             std::cerr << std::format(
                 "sysfs_gpio_apply: gpio{} direction={}: {}\n", pin.number,
                 direction, std::strerror(err));
-        }
-
-        if (pin.direction != SysfsGpioDir::Out || !pin.value)
-            continue;
-        if (const int err =
-                detail::sysfs_write(dir + "/value", std::to_string(*pin.value));
-            err != 0)
-        {
-            std::cerr << std::format("sysfs_gpio_apply: gpio{} value={}: {}\n",
-                                     pin.number, *pin.value,
-                                     std::strerror(err));
         }
     }
 }
