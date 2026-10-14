@@ -65,9 +65,9 @@ static constexpr std::string_view ast2700_mlxreg_io_hwmon =
     "14c0ff00.i2c-bus/i2c-14/14-0031/mlxreg-io/hwmon";
 
 // Source: get_system_hw_bom's HID case list.
-static constexpr std::array<std::string_view, 10> ast2700_bom_hids{
-    "HI186", "HI187", "HI188", "HI189", "HI190",
-    "HI191", "HI193", "HI183", "HI195", "HI197",
+static constexpr std::array<std::string_view, 11> ast2700_bom_hids{
+    "HI186", "HI187", "HI188", "HI189", "HI190", "HI191",
+    "HI193", "HI194", "HI183", "HI195", "HI197",
 };
 
 // Source: switch-ast2700-bmc_ready.sh:29-35 — each helper no-ops unless its own
