@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: 2025 NVIDIA
+// SPDX-FileCopyrightText: Copyright OpenBMC Authors
 
 #pragma once
 
 #include <cstdint>
+#include <expected>
 #include <span>
 #include <string>
+#include <system_error>
+#include <vector>
 
 namespace i2c
 {
@@ -23,6 +26,8 @@ void new_device(unsigned int bus, unsigned int address,
 // Returns 0, or a positive errno.
 int raw_transfer(unsigned int bus, uint8_t address,
                  std::span<const uint8_t> write, std::span<uint8_t> read);
+std::expected<void, std::error_code> bind_device(
+    unsigned int bus, unsigned int address, std::string_view driver_name);
 
 // a simple RAII wrapper for raw i2c comms
 struct RawDevice
@@ -34,7 +39,13 @@ struct RawDevice
     RawDevice& operator=(RawDevice&&) = default;
     RawDevice(RawDevice&&) = default;
 
-    int read_byte(uint8_t reg, uint8_t& val);
+    std::expected<uint8_t, std::error_code> read_byte(uint8_t reg);
+
+    std::expected<void, std::error_code> write_block(
+        std::span<const uint8_t> data);
+
+    std::expected<std::vector<uint8_t>, std::error_code> read_i2c_block(
+        uint8_t reg, size_t len);
 
     // Source: i2cset -y <bus> <addr> <reg> <val> b  (SMBus write-byte-data)
     int write_byte(uint8_t reg, uint8_t val);

@@ -5,9 +5,11 @@
 #include <systemd/sd-daemon.h>
 #include <unistd.h>
 
-#include <sdbusplus/asio/connection.hpp>
+#include <sdbusplus/bus.hpp>
 
+#include <array>
 #include <chrono>
+#include <expected>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -36,6 +38,16 @@ void setup_devmem()
     logged_system("mknod /dev/mem c 1 1");
 }
 
+void enable_lpc_espi_clocks()
+{
+    // SCU094[1:0] = 1 ungates LCLK + eSPI clock that the Linux clock framework
+    // turned off in clk_disable_unused() because no driver claims espiclk.
+    // Workaround until upstream Aspeed eSPI driver lands and properly claims
+    // it.
+    static constexpr uint32_t reg = 0x1e6e2094;
+    logged_system(std::format("devmem 0x{:x} 32 0x3", reg));
+}
+
 void handle_passthrough_registers(bool enable)
 {
     static constexpr uint32_t reg = 0x1e6e24bc;
@@ -57,20 +69,22 @@ void wait_for_i2c_ready()
     i2c::RawDevice cpld{4, 0x17};
     auto now = steady_clock::now();
     auto end = now + 20min;
+
     while (steady_clock::now() < end)
     {
         static constexpr uint8_t i2c_ready = 0xf2;
-        uint8_t result;
-        int rc = cpld.read_byte(i2c_ready, result);
-        if (rc)
+        const auto result = cpld.read_byte(i2c_ready);
+
+        if (!result.has_value())
         {
             std::string err =
-                std::format("Unable to communicate with cpld. rc: {}\n", rc);
+                std::format("Unable to communicate with cpld. rc: {}\n",
+                            result.error().value());
             std::cerr << err;
             throw std::runtime_error(err);
         }
 
-        if (result == 1)
+        if (*result == 1)
         {
             return;
         }
@@ -413,7 +427,7 @@ void bringup_devices()
     // delete this mess.
     static constexpr const char* usb_prefix =
         "/sys/devices/platform/ahb/1e6a3000.usb/usb1/1-1/";
-    const std::array<bridge_device, 10> device_name_map = {
+    const auto device_name_map = std::to_array<bridge_device>(
         {{.usb_path = "1-1.2/1-1.2.1/1-1.2.1:1.0",
           .name = "GPU_0",
           .board_name = "Nvidia_RTX_PRO_6000_Blackwell_1"},
@@ -443,7 +457,7 @@ void bringup_devices()
           .board_name = "Nvidia_RTX_PRO_6000_Blackwell_8"},
          {.usb_path = "1-1.1/1-1.1.2/1-1.1.2.3/1-1.1.2.3:1.0",
           .name = "CX8_1",
-          .board_name = "NVIDIA_Alon_cx8_Fru"}}};
+          .board_name = "NVIDIA_Alon_cx8_Fru"}});
 
     for (const auto& [usb_path, name, board_name] : device_name_map)
     {
@@ -471,7 +485,7 @@ void bringup_devices()
         if (name.starts_with("GPU"))
         {
             // each GPU has an SMA, as well as a GPU, they both talk over vdm
-            // so add both as seperate nodes
+            // so add both as separate nodes
             std::cerr << "Adding SMA\n";
             populate_gpu(board_name, bridge_eid, name + "SMA");
             std::cerr << "Adding GPU\n";
@@ -502,12 +516,14 @@ void wait_for_frus_to_probe()
 int init_nvl32()
 {
     setup_devmem();
+    enable_lpc_espi_clocks();
+    gpio::set("BMC_INIT_DONE", 1);
     handle_passthrough_registers(false);
     sd_notify(0, "READY=1");
 
     wait_for_i2c_ready();
     // we suspect that the CPLD tells us we're ready before
-    // we actually are. This sleep stabilizes this discrepency
+    // we actually are. This sleep stabilizes this discrepancy
     std::this_thread::sleep_for(std::chrono::seconds{1});
 
     create_i2c_mux(5, 0x70, "pca9548");

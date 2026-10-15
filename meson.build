@@ -10,33 +10,39 @@ gpiodcxx_dep = dependency('libgpiodcxx', default_options: ['bindings=cxx'])
 systemd_dep = dependency('systemd')
 libsystemd_dep = dependency('libsystemd')
 sdbusplus = dependency('sdbusplus', include_type: 'system')
-cli11_dep = dependency('CLI11', required: true, include_type: 'system')
+cli11_dep = dependency(
+    'CLI11',
+    include_type: 'system',
+    default_options: ['tests=disabled'],
+)
 i2c_dep = meson.get_compiler('cpp').find_library('i2c')
-
 util_srcs = files('gpio.cpp', 'i2c.cpp', 'utilities.cpp')
 
 platform_srcs = files(
-    'nvidia/gb200.cpp',
-    'nvidia/gb200nvl_bmc.cpp',
-    'nvidia/gb200nvl_hmc.cpp',
-    'nvidia/nvl32.cpp',
-    'nvidia/switch_ast2700_bmc.cpp',
-    'nvidia/switch_rosalind_bmc.cpp',
-    'nvidia/switch_spc6_ast2600_bmc.cpp',
-    'nvidia/vr_c2_bmc.cpp',
-    'nvidia/vr_e5010_bmc.cpp',
-    'nvidia/vr_nvl_bmc.cpp',
-    'nvidia/vr_nvl_bmc_ast2700.cpp',
-    'nvidia/vr_nvl_hmc.cpp',
-    'nvidia/vr_nvl_hmc_ast2700.cpp',
-    'nvidia/vr_quark_bmc.cpp',
+    'platforms/intel/acrp.cpp',
+    'platforms/intel/jcrp.cpp',
+    'platforms/nvidia/gb200.cpp',
+    'platforms/nvidia/gb200nvl_bmc.cpp',
+    'platforms/nvidia/gb200nvl_hmc.cpp',
+    'platforms/nvidia/nvl32.cpp',
+    'platforms/nvidia/switch_ast2700_bmc.cpp',
+    'platforms/nvidia/switch_rosalind_bmc.cpp',
+    'platforms/nvidia/switch_spc6_ast2600_bmc.cpp',
+    'platforms/nvidia/vr_c2_bmc.cpp',
+    'platforms/nvidia/vr_e5010_bmc.cpp',
+    'platforms/nvidia/vr_nvl.cpp',
+    'platforms/nvidia/vr_nvl_bmc.cpp',
+    'platforms/nvidia/vr_nvl_bmc_ast2700.cpp',
+    'platforms/nvidia/vr_nvl_hmc.cpp',
+    'platforms/nvidia/vr_nvl_hmc_ast2700.cpp',
+    'platforms/nvidia/vr_quark_bmc.cpp',
 )
 
 executable(
     'platform',
     ['platform.cpp'] + platform_srcs + util_srcs,
     dependencies: [gpiodcxx_dep, libsystemd_dep, cli11_dep, i2c_dep, sdbusplus],
-    include_directories: ['.', 'nvidia'],
+    include_directories: ['.', 'platforms'],
     install: true,
     install_dir: get_option('libexecdir'),
 )
@@ -52,7 +58,7 @@ configure_file(
     configuration: configuration_data({'PLATFORM_NAME': platform_name}),
 )
 
-script_base = 'nvidia/scripts/platforms'
+script_base = 'platforms/nvidia/scripts/platforms'
 
 subdir('emmc-manager')
 
