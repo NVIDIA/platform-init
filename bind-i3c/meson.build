@@ -5,7 +5,7 @@ executable(
     'platform-init-i3c-bind',
     'bind_i3c.cpp',
     dependencies: [gpiodcxx_dep, libsystemd_dep, i2c_dep, sdbusplus],
-    include_directories: ['..', '../nvidia'],
+    include_directories: ['..', '../platforms/nvidia'],
     install: true,
     install_dir: get_option('bindir'),
 )
