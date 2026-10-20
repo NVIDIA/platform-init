@@ -687,7 +687,17 @@ int init_switch_ast2700_bmc()
             ast2700_copy_cartridge_data(std::string{ast2700_cartridge_config});
         }
 
-        hw_mgmt_mcu_reset();
+        // MCU_RESET_ON_BOOT=no keeps the MCUs running: on VRU they control the
+        // CPLDs, and a reset would re-stream them under the platform driver.
+        if (platform_feature("MCU_RESET_ON_BOOT") == "no")
+        {
+            std::cerr << "switch-ast2700-bmc: MCU_RESET_ON_BOOT=no, leaving "
+                         "the MCUs running\n";
+        }
+        else
+        {
+            hw_mgmt_mcu_reset();
+        }
 
         const auto leakSource = platform_feature("LEAK_DETECTION_SOURCE");
         if (leakSource == "mcu")
