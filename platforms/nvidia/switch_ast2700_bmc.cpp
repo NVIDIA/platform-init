@@ -2,6 +2,9 @@
 // SPDX-FileCopyrightText: 2025 NVIDIA
 
 // Platform init for the switch AST2700 BMCs.
+//
+// On VRU (HID194/199/200) the platform driver is held back until every CPLD
+// root-of-trust MCU reports its CPLD streamed; see the CPLD-ready gate below.
 
 #include "i2c.hpp"
 #include "switch_common.hpp"
@@ -17,6 +20,7 @@
 #include <cctype>
 #include <charconv>
 #include <chrono>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -24,6 +28,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -611,6 +616,401 @@ constexpr std::array<CartridgeBoard, 5> ast2700_cartridge_boards{{
     {"Spc6", "HI182"},
 }};
 
+// ── CPLD-ready gate (VRU) ─────────────────────────────────────────────────
+// On VRU each MCU is the root of trust of one CPLD: it authenticates the CPLD
+// image and streams it over SSPI, and until every CPLD is streamed the register
+// space behind the platform driver is incomplete. The driver is therefore
+// blacklisted on those HIDs and loaded here, once every MCU listed in
+// CPLD_READY_MCUS reports its CPLD component Activated in NSM Get RoT State
+// Information (type 6, command 0x01). The MCU reports in-progress and failure
+// with the same state, so the only way out of "not done" is the timeout, after
+// which the driver is loaded anyway: a backup-image restore can take up to
+// 300 s. The MCUs stream in parallel, so they share one timeout.
+//
+// The MCUs have no EID this early: entity-manager and mctpreactor assign them
+// long after platform init. The same static EIDs are assigned here through
+// mctpd, which hands back the existing endpoint when mctpreactor repeats the
+// call.
+//
+// nsmtool refuses to send while nsmd owns its bus name, so the VRU
+// platform_init.service drop-in orders this unit before nsmd.service.
+
+static constexpr uint16_t cpld_rot_component_class = 0x000a;
+static constexpr uint16_t cpld_rot_component_id = 0x0120;
+static constexpr std::chrono::seconds cpld_ready_default_timeout{330};
+static constexpr std::chrono::seconds cpld_ready_poll_interval{2};
+static constexpr std::chrono::seconds nsm_command_timeout{10};
+// MCTP reserves EID 0 (null) and 255 (broadcast).
+static constexpr unsigned mctp_max_static_eid = 254;
+static constexpr size_t shell_read_chunk = 512;
+static constexpr size_t nsm_reply_log_limit = 2048;
+
+struct ShellCapture
+{
+    int status = -1;
+    std::string output;
+};
+
+// Runs cmd through /bin/sh and returns its pclose() status and stdout with
+// trailing newlines removed. Callers append "2>&1" to capture stderr too.
+// status stays -1 when the shell cannot be started.
+//   in:  "echo hello"
+//   out: { status = 0, output = "hello" }
+//   in:  "false"
+//   out: { status = 256, output = "" }   (wait status: exit code 1 << 8)
+static ShellCapture ast2700_shell_capture(const std::string& cmd)
+{
+    ShellCapture result;
+    auto* pipe = ::popen(cmd.c_str(), "r");
+    if (!pipe)
+        return result;
+    std::array<char, shell_read_chunk> buf{};
+    while (::fgets(buf.data(), static_cast<int>(buf.size()), pipe))
+        result.output += buf.data();
+    result.status = ::pclose(pipe);
+    while (!result.output.empty() && result.output.back() == '\n')
+        result.output.pop_back();
+    return result;
+}
+
+// The value of key in /etc/platform_features.conf as an unsigned integer, or
+// nullopt when the key is unset or its value is not a plain decimal number.
+//   in:  "CPLD_READY_TIMEOUT"  with  CPLD_READY_TIMEOUT=330   out: 330
+//   in:  "CPLD_READY_TIMEOUT"  with  CPLD_READY_TIMEOUT=330s  out: nullopt
+//   in:  "CPLD_READY_TIMEOUT"  with the key absent            out: nullopt
+static std::optional<unsigned> ast2700_feature_uint(std::string_view key)
+{
+    const auto value = platform_feature(key);
+    unsigned parsed = 0;
+    const auto* const end = value.data() + value.size();
+    const auto [ptr, ec] = std::from_chars(value.data(), end, parsed);
+    if (value.empty() || ec != std::errc{} || ptr != end)
+        return std::nullopt;
+    return parsed;
+}
+
+// A shell reply on one line for the journal: whitespace runs collapsed to a
+// single space and anything past nsm_reply_log_limit cut off. An empty reply
+// is described by its exit status instead.
+//   in:  { status = 0, output = "{\n  \"Completion code\": 4\n}" }
+//   out: "{ \"Completion code\": 4 }"
+//   in:  { status = 31744, output = "" }  (timeout killed nsmtool)
+//   out: "no output, exit status 124"
+static std::string ast2700_reply_for_log(const ShellCapture& reply)
+{
+    std::string line;
+    for (const char c : reply.output)
+    {
+        if (std::isspace(static_cast<unsigned char>(c)))
+        {
+            if (!line.empty() && line.back() != ' ')
+                line += ' ';
+        }
+        else
+            line += c;
+    }
+    if (!line.empty() && line.back() == ' ')
+        line.pop_back();
+
+    if (line.empty())
+    {
+        if (reply.status == -1)
+            return "no output, shell not started";
+        if (WIFEXITED(reply.status))
+            return std::format("no output, exit status {}",
+                               WEXITSTATUS(reply.status));
+        return std::format("no output, wait status {}", reply.status);
+    }
+    if (line.size() > nsm_reply_log_limit)
+    {
+        line.resize(nsm_reply_log_limit);
+        line += " ...";
+    }
+    return line;
+}
+
+// The "Firmware state" of the active slot in nsmtool's GetRotInformation JSON,
+// or empty when the reply is missing, malformed or carries a non-zero
+// completion code. nsmtool's stderr is merged in, so the JSON starts at the
+// first brace.
+//   in:  { "Completion code": 0, "Active Slot": 0,
+//          "Slot information": [
+//              { "Slot ID": 0, "Firmware state": "Activated", ... },
+//              { "Slot ID": 1, "Firmware state": "Unknown", ... } ] }
+//   out: "Activated"
+//   in:  { "Completion code": 4, ... }               out: ""
+//   in:  "nsmtool: failed to open socket"            out: ""
+static std::string ast2700_cpld_rot_state(std::string_view nsmtool_output)
+{
+    const auto start = nsmtool_output.find('{');
+    if (start == std::string_view::npos)
+        return {};
+
+    try
+    {
+        const auto doc =
+            nlohmann::json::parse(nsmtool_output.substr(start), nullptr, false);
+        if (doc.is_discarded() || !doc.is_object() ||
+            doc.value("Completion code", -1) != 0)
+            return {};
+
+        const auto active = doc.value("Active Slot", -1);
+        const auto slots = doc.find("Slot information");
+        if (slots == doc.end() || !slots->is_array())
+            return {};
+        for (const auto& slot : *slots)
+        {
+            if (slot.is_object() && slot.value("Slot ID", -2) == active)
+                return slot.value("Firmware state", std::string{});
+        }
+    }
+    catch (const nlohmann::json::exception& e)
+    {
+        std::cerr << std::format("switch-ast2700-bmc: unexpected nsmtool "
+                                 "reply: {}\n",
+                                 e.what());
+    }
+    return {};
+}
+
+struct CpldReadyMcu
+{
+    std::string iface;
+    unsigned eid = 0;
+    std::string netdev;
+    std::string assign_cmd;
+    std::string query_cmd;
+    bool assigned = false;
+    bool ready = false;
+    std::string last_state;
+    std::string last_reply;
+};
+
+// CPLD_READY_MCUS is a whitespace-separated list of <netdev>:<EID> pairs, one
+// per CPLD root-of-trust MCU, e.g. "musbmgmt:71 musbswb1:69". A malformed
+// entry is logged and dropped. Each returned MCU carries its netdev path and
+// the mctpd and nsmtool commands built for it.
+//   in:  CPLD_READY_MCUS="musbmgmt:71 musbswb1:69"
+//   out: [ { iface = "musbmgmt", eid = 71,
+//            netdev = "/sys/class/net/musbmgmt",
+//            assign_cmd = "busctl call ... interfaces/musbmgmt ...
+//                          AssignEndpointStatic ayyyayay 0 71 0 0 0 2>&1",
+//            query_cmd = "timeout 10 nsmtool firmware GetRotInformation
+//                         -m 71 -c 0x0a -i 0x0120 -d 0 2>&1" },
+//          { iface = "musbswb1", eid = 69, ... } ]
+//   in:  CPLD_READY_MCUS="musbmgmt:71 musbswb1 musbswb2:300"
+//   out: [ { iface = "musbmgmt", eid = 71, ... } ]  (the other two logged)
+//   in:  CPLD_READY_MCUS unset                       out: []
+static std::vector<CpldReadyMcu> ast2700_cpld_ready_mcus()
+{
+    std::vector<CpldReadyMcu> mcus;
+    const auto list = platform_feature("CPLD_READY_MCUS");
+    std::string_view rest{list};
+    while (!rest.empty())
+    {
+        const auto begin = rest.find_first_not_of(" \t");
+        if (begin == std::string_view::npos)
+            break;
+        rest.remove_prefix(begin);
+        const auto entry = rest.substr(0, rest.find_first_of(" \t"));
+        rest.remove_prefix(entry.size());
+
+        const auto colon = entry.find(':');
+        const auto iface = entry.substr(0, colon);
+        const auto eid_str = colon == std::string_view::npos
+                                 ? std::string_view{}
+                                 : entry.substr(colon + 1);
+        unsigned eid = 0;
+        const auto* const end = eid_str.data() + eid_str.size();
+        const auto [ptr, ec] = std::from_chars(eid_str.data(), end, eid);
+        if (iface.empty() || eid_str.empty() || ec != std::errc{} ||
+            ptr != end || eid == 0 || eid > mctp_max_static_eid)
+        {
+            std::cerr << std::format("switch-ast2700-bmc: ignoring malformed "
+                                     "CPLD_READY_MCUS entry '{}'\n",
+                                     entry);
+            continue;
+        }
+
+        CpldReadyMcu mcu;
+        mcu.iface = iface;
+        mcu.eid = eid;
+        mcu.netdev = std::format("/sys/class/net/{}", iface);
+        mcu.assign_cmd = std::format(
+            "busctl call au.com.codeconstruct.MCTP1 "
+            "/au/com/codeconstruct/mctp1/interfaces/{} "
+            "au.com.codeconstruct.MCTP.BusOwner1 AssignEndpointStatic "
+            "ayyyayay 0 {} 0 0 0 2>&1",
+            iface, eid);
+        mcu.query_cmd = std::format(
+            "timeout {} nsmtool firmware GetRotInformation -m {} -c {:#04x} "
+            "-i {:#06x} -d 0 2>&1",
+            nsm_command_timeout.count(), eid, cpld_rot_component_class,
+            cpld_rot_component_id);
+        mcus.push_back(std::move(mcu));
+    }
+    return mcus;
+}
+
+// One poll of one MCU: the active slot's firmware state, or why there is none.
+// Assigns the MCU's static EID first when it has none yet, and forgets the
+// assignment when the netdev disappears or the MCU gives no valid reply. Every
+// nsmtool reply is kept in mcu.last_reply.
+//   in:  { iface = "musbmgmt", eid = 71 }, netdev up, MCU streamed its CPLD
+//   out: "Activated"                     (mcu.assigned = true)
+//   in:  { iface = "musbswb1", eid = 69 }, /sys/class/net/musbswb1 missing
+//   out: "musbswb1 absent"               (mcu.assigned = false)
+//   in:  { iface = "musbmgmt", eid = 71 }, nsmtool times out
+//   out: "no valid NSM reply: no output, exit status 124"
+//                                        (mcu.assigned = false)
+static std::string ast2700_poll_cpld_mcu(CpldReadyMcu& mcu)
+{
+    if (!std::filesystem::exists(mcu.netdev))
+    {
+        mcu.assigned = false;
+        return std::format("{} absent", mcu.iface);
+    }
+
+    if (!mcu.assigned)
+    {
+        const auto r = ast2700_shell_capture(mcu.assign_cmd);
+        mcu.assigned = r.status == 0;
+        if (!mcu.assigned)
+            return std::format("EID {} assignment failed: {}", mcu.eid,
+                               r.output);
+    }
+
+    const auto reply = ast2700_shell_capture(mcu.query_cmd);
+    mcu.last_reply = ast2700_reply_for_log(reply);
+    auto state = ast2700_cpld_rot_state(reply.output);
+    if (state.empty())
+    {
+        // The MCU may have re-enumerated and lost its EID; the assignment is
+        // idempotent, so redo it next round.
+        mcu.assigned = false;
+        return std::format("no valid NSM reply: {}", mcu.last_reply);
+    }
+    return state;
+}
+
+// No-op unless the active HID sets CPLD_READY_MCUS in
+// /etc/platform_features.conf. Polls every listed MCU every 2 s until all
+// report Activated or CPLD_READY_TIMEOUT expires, logging each state change.
+// Returns in both cases; on timeout each MCU not ready is logged as an error.
+//   in:  CPLD_READY_MCUS="musbmgmt:71", MCU reports Activated after 4 s
+//   out: returns after about 4 s, logging "MCU EID 71 on musbmgmt reports
+//        its CPLD ready after 4 s"
+//   in:  CPLD_READY_MCUS="musbmgmt:71 musbswb1:69", musbswb1 never appears
+//   out: returns after CPLD_READY_TIMEOUT, logging "MCU EID 69 on musbswb1
+//        did not report its CPLD ready within 330 s (last: musbswb1 absent;
+//        last nsmtool reply: none)"
+static void ast2700_wait_cpld_ready()
+{
+    auto mcus = ast2700_cpld_ready_mcus();
+    if (mcus.empty())
+        return;
+
+    const auto timeout =
+        ast2700_feature_uint("CPLD_READY_TIMEOUT")
+            .transform([](unsigned s) { return std::chrono::seconds{s}; })
+            .value_or(cpld_ready_default_timeout);
+
+    for (const auto& mcu : mcus)
+    {
+        std::cerr << std::format("switch-ast2700-bmc: waiting up to {} s for "
+                                 "MCU EID {} on {} to report its CPLD ready\n",
+                                 timeout.count(), mcu.eid, mcu.iface);
+    }
+
+    const auto start = std::chrono::steady_clock::now();
+    const auto elapsed_since_start = [start] {
+        return std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - start);
+    };
+    for (;;)
+    {
+        for (auto& mcu : mcus)
+        {
+            // An unanswered poll takes up to nsm_command_timeout, so stop the
+            // round once the budget is spent.
+            if (elapsed_since_start() >= timeout)
+                break;
+            if (mcu.ready)
+                continue;
+
+            const auto state = ast2700_poll_cpld_mcu(mcu);
+            const auto elapsed = elapsed_since_start();
+            if (state == "Activated")
+            {
+                mcu.ready = true;
+                std::cerr << std::format("switch-ast2700-bmc: MCU EID {} on "
+                                         "{} reports its CPLD ready after {} "
+                                         "s\n",
+                                         mcu.eid, mcu.iface, elapsed.count());
+            }
+            else if (state != mcu.last_state)
+            {
+                std::cerr << std::format(
+                    "switch-ast2700-bmc: MCU EID {} on {}: CPLD not ready "
+                    "yet after {} s: {}\n",
+                    mcu.eid, mcu.iface, elapsed.count(), state);
+                mcu.last_state = state;
+            }
+        }
+
+        if (std::ranges::all_of(mcus, &CpldReadyMcu::ready))
+        {
+            std::cerr << "switch-ast2700-bmc: every MCU reports its CPLD "
+                         "ready\n";
+            return;
+        }
+
+        if (elapsed_since_start() >= timeout)
+        {
+            for (const auto& mcu : mcus)
+            {
+                if (mcu.ready)
+                    continue;
+                phosphor_log_all(std::format(
+                    "platform init: MCU EID {} on {} did not report its CPLD "
+                    "ready within {} s (last: {}; last nsmtool reply: {}); "
+                    "loading the platform driver anyway",
+                    mcu.eid, mcu.iface, timeout.count(), mcu.last_state,
+                    mcu.last_reply.empty() ? "none" : mcu.last_reply));
+            }
+            return;
+        }
+        std::this_thread::sleep_for(cpld_ready_poll_interval);
+    }
+}
+
+// The driver named by PLATFORM_DRIVER_MODULE is blacklisted on the HIDs that
+// set it, so udev never autoloads it and it is loaded only here. A failed
+// load is logged as an error and init carries on: the BMC stays reachable
+// without the platform driver, only its hw-management tree is missing.
+//   in:  PLATFORM_DRIVER_MODULE=nvsw_bmc_hid162
+//   runs: modprobe nvsw_bmc_hid162
+//   in:  PLATFORM_DRIVER_MODULE unset
+//   runs: nothing
+static void ast2700_load_platform_driver()
+{
+    const auto module = platform_feature("PLATFORM_DRIVER_MODULE");
+    if (module.empty())
+        return;
+    const auto cmd = std::format("modprobe {}", module);
+    std::cerr << std::format("switch-ast2700-bmc: calling {}\n", cmd);
+    if (const int rc = std::system(cmd.c_str()); // NOLINT(cert-env33-c)
+        rc != 0)
+    {
+        phosphor_log_all(std::format(
+            "platform init: ERROR: '{}' failed (status {}); the platform "
+            "driver is not loaded",
+            cmd, rc));
+    }
+}
+
+// ── Platform init ─────────────────────────────────────────────────────────
+
 int init_switch_ast2700_bmc()
 {
     using namespace std::chrono_literals;
@@ -630,6 +1030,12 @@ int init_switch_ast2700_bmc()
             gpio_config = ast2700_gpio_pins_hardcoded();
         }
         sysfs_gpio_apply(gpio_config->pins);
+
+        // Both no-ops unless the active HID's platform_features.conf asks for
+        // them. They must precede the wait below: the system tree appears only
+        // once the platform driver binds.
+        ast2700_wait_cpld_ready();
+        ast2700_load_platform_driver();
 
         hw_mgmt_wait_system_tree("switch-ast2700-bmc");
 
