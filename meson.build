@@ -71,18 +71,6 @@ script_base = 'platforms/nvidia/scripts/platforms'
 
 subdir('emmc-manager')
 
-# No switch image installs the cpu-diag-status recipe that ships the script
-# this unit runs, so building it here would install an inert unit.
-if platform_name.contains('bmc') and not platform_name.contains('switch')
-    subdir('cpu-diag-status')
-endif
-
-if platform_name.contains('vr-nvl-hmc')
-    subdir('i2c-dump-server')
-    subdir('hmc-temp-sensor')
-    subdir('hmc-post-boot-cfg')
-endif
-
 # Only spc6-ast2600-bmc sets BIND_I3C_ON_BIOS_BOOT=1; elsewhere the handler
 # defaults it to 0, so the unit would never be started.
 if platform_name.contains('spc6-ast2600')
