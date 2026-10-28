@@ -66,6 +66,9 @@ bool iox_present(unsigned bus, unsigned addr);
 
 void iox_bind(unsigned bus, unsigned addr);
 
+// Lines are released before READY=1, as gpioset -m exit does.
+int notify_ready_and_wait();
+
 namespace detail
 {
 
@@ -93,4 +96,18 @@ int filesystem_check_mtd(std::string_view rwfs_mount = "/run/initramfs/rw",
                          std::string_view work_path = "/run/initramfs/rw/work",
                          std::string_view mtd_device = "/dev/mtd6");
 
+// emmc-rwfs check_rofs: work/ must exist and work/work be creatable.
+bool check_rofs();
+
+// emmc-rwfs check_rw_filesystems.
+bool check_rw_filesystems();
+
 } // namespace nvidia
+
+namespace nvidia::compute
+{
+
+// The scripts' mc_lib.sh creates /run/bmc-state when it is sourced.
+void create_state_dir();
+
+} // namespace nvidia::compute

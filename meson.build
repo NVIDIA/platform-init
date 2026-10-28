@@ -21,6 +21,7 @@ util_srcs = files('gpio.cpp', 'i2c.cpp', 'utilities.cpp')
 platform_srcs = files(
     'platforms/intel/acrp.cpp',
     'platforms/intel/jcrp.cpp',
+    'platforms/nvidia/compute_bmc_common.cpp',
     'platforms/nvidia/gb200.cpp',
     'platforms/nvidia/gb200nvl_bmc.cpp',
     'platforms/nvidia/gb200nvl_hmc.cpp',
@@ -37,6 +38,7 @@ platform_srcs = files(
     'platforms/nvidia/vr_nvl_bmc_ast2700.cpp',
     'platforms/nvidia/vr_nvl_hmc.cpp',
     'platforms/nvidia/vr_nvl_hmc_ast2700.cpp',
+    'platforms/nvidia/vr_pdb.cpp',
     'platforms/nvidia/vr_quark_bmc.cpp',
 )
 

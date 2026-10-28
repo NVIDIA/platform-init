@@ -471,66 +471,12 @@ inline int hw_checkout(std::span<const ErotEndpoint> endpoints, int retries = 5,
 
 // ── Power-sequence and hardware-binding helpers ───────────────────────────
 
-// Poll until the expander appears in sysfs (i.e. standby power is up).
-// Source: check_iox_N_20_present() — 30 s timeout, 1 s poll.
-inline bool iox_wait(unsigned bus, unsigned addr,
-                     std::chrono::seconds timeout = std::chrono::seconds{30})
-{
-    using namespace std::chrono_literals;
-    const auto path =
-        std::format("/sys/bus/i2c/drivers/pca953x/{}-{:04x}", bus, addr);
-    const auto deadline = std::chrono::steady_clock::now() + timeout;
-    while (std::chrono::steady_clock::now() < deadline)
-    {
-        if (std::filesystem::exists(path))
-            return true;
-        std::this_thread::sleep_for(1s);
-    }
-    std::cerr << std::format("iox_wait: {}-{:04x} not present after {}s\n", bus,
-                             addr, timeout.count());
-    return false;
-}
-
-// ── 2b. I2C mux binding ───────────────────────────────────────────────────
-// Source: bind_i2c_mux_driver() in bmc_ready.sh
-// Binds a PCA954x I2C mux. Used on C2 after B0_M1_I2C_SOCAMM_UPHY_SEL-O is set.
-inline void i2c_mux_bind(unsigned bus, unsigned addr)
-{
-    const auto path =
-        std::format("/sys/bus/i2c/drivers/pca954x/{}-{:04x}", bus, addr);
-    if (std::filesystem::exists(path))
-        return;
-    if (std::ofstream f{"/sys/bus/i2c/drivers/pca954x/bind"}; f)
-    {
-        f << std::format("{}-{:04x}", bus, addr);
-        std::cerr << std::format("i2c_mux_bind: {}-{:04x} bound\n", bus, addr);
-    }
-    else
-        std::cerr << std::format("i2c_mux_bind: {}-{:04x} FAILED\n", bus, addr);
-}
-
-// ── 2c. HMC I2C mux select ────────────────────────────────────────────────
-// Source: hmc_bypass() in bmc_ready.sh
-// Routes I2C_MGMT1 through or around the HMC depending on whether the HMC is
-// present. HMC present → HIGH (dedicated path). HMC absent → LOW (bypass).
-// GPIO names may differ across platforms; override defaults as needed.
-inline void hmc_mux_select(const char* prsnt_gpio = "HMC_PRSNT_R-I",
-                           const char* sel_gpio = "BMC_HMC_MUX_SEL-O")
-{
-    const int present = gpio::get(prsnt_gpio);
-    if (present == 1)
-    {
-        std::cerr << std::format(
-            "hmc_mux_select: HMC present — disabling I2C_MGMT1 bypass\n");
-        gpio::set(sel_gpio, 1);
-    }
-    else
-    {
-        std::cerr << std::format(
-            "hmc_mux_select: HMC absent — enabling I2C_MGMT1 bypass\n");
-        gpio::set(sel_gpio, 0);
-    }
-}
+// Defined in compute_bmc_common.cpp.
+bool iox_wait(unsigned bus, unsigned addr,
+              std::chrono::seconds timeout = std::chrono::seconds{30});
+void i2c_mux_bind(unsigned bus, unsigned addr);
+void hmc_mux_select(const char* prsnt_gpio = "HMC_PRSNT_R-I",
+                    const char* sel_gpio = "BMC_HMC_MUX_SEL-O");
 
 // ── 2d. GPIO poll helper ──────────────────────────────────────────────────
 // Source: wait_gpio_assert() in bmc_ready.sh

@@ -42,6 +42,14 @@ void iox_bind(unsigned bus, unsigned addr)
         std::cerr << std::format("iox_bind: {}-{:04x} FAILED\n", bus, addr);
 }
 
+int notify_ready_and_wait()
+{
+    gpio::release_all();
+    sd_notify(0, "READY=1");
+    pause();
+    return EXIT_SUCCESS;
+}
+
 namespace detail
 {
 
@@ -251,4 +259,43 @@ int filesystem_check_mtd(std::string_view rwfs_mount,
     return EXIT_SUCCESS;
 }
 
+bool check_rofs()
+{
+    const std::filesystem::path work_dir{"/run/initramfs/rw/work"};
+    if (!std::filesystem::is_directory(work_dir))
+    {
+        std::cerr << "Could not find work directory, /run/initramfs/rw/work\n";
+        return false;
+    }
+    std::error_code ec;
+    std::filesystem::create_directory(work_dir / "work", ec);
+    if (ec)
+    {
+        std::cerr << "[ERROR] No space left on rwfs. Management Controller "
+                     "booted in read only mode. Perform Factory reset to "
+                     "recover read write functionality.\n";
+        return false;
+    }
+    return true;
+}
+
+bool check_rw_filesystems()
+{
+    if (detail::is_mounted("/run/initramfs/rw"))
+        return true;
+    std::cerr << "[ERROR] Mount failure at /run/initramfs/rw\n";
+    return false;
+}
+
 } // namespace nvidia
+
+namespace nvidia::compute
+{
+
+void create_state_dir()
+{
+    std::error_code ec;
+    std::filesystem::create_directories("/run/bmc-state", ec);
+}
+
+} // namespace nvidia::compute
