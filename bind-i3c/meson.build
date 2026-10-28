@@ -3,7 +3,11 @@
 
 executable(
     'platform-init-i3c-bind',
-    'bind_i3c.cpp',
+    [
+        'bind_i3c.cpp',
+        '../platforms/nvidia/nvidia_platform_utils.cpp',
+        '../platforms/nvidia/switch_common.cpp',
+    ] + util_srcs,
     dependencies: [gpiodcxx_dep, libsystemd_dep, i2c_dep, sdbusplus],
     include_directories: ['..', '../platforms/nvidia'],
     install: true,

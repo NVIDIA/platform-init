@@ -6,7 +6,7 @@
 // ASICs, so platform init cannot load the drivers while the host CPU is down;
 // hw-management-events.sh starts this from the CPU_RESET_DEASSERT udev event.
 
-#include "platform_utils.hpp"
+#include "switch_common.hpp"
 
 int main()
 {
