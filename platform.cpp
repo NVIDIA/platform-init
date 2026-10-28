@@ -36,6 +36,8 @@ constexpr auto init_functions =
          {"nvidia-vr-nvl-hmc-ast2700", nvidia::init_vr_nvl_hmc_ast2700},
          {"nvidia-vr-e5010-bmc", nvidia::init_vr_e5010_bmc},
          {"nvidia-vr-quark-bmc", nvidia::init_vr_quark_bmc},
+         {"nvidia-vru-nvl-bmc", nvidia::init_vru_nvl_bmc},
+         {"nvidia-vru-nvl-bmc-strata", nvidia::init_vr_nvl_bmc_ast2700},
          {"nvidia-switch-rosalind-bmc", nvidia::init_switch_rosalind_bmc},
          {"nvidia-switch-spc6-ast2600-bmc",
           nvidia::init_switch_spc6_ast2600_bmc},

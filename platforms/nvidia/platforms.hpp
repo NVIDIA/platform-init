@@ -20,6 +20,7 @@ int init_vr_nvl_hmc();
 int init_vr_nvl_hmc_ast2700();
 int init_vr_e5010_bmc();
 int init_vr_quark_bmc();
+int init_vru_nvl_bmc();
 
 int init_switch_rosalind_bmc();
 int init_switch_spc6_ast2600_bmc();
