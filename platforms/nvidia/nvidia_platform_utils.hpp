@@ -66,6 +66,10 @@ bool iox_present(unsigned bus, unsigned addr);
 
 void iox_bind(unsigned bus, unsigned addr);
 
+// Waits for the IOX at <bus>-<addr> to be bound.
+bool iox_wait(unsigned bus, unsigned addr,
+              std::chrono::seconds timeout = std::chrono::seconds{30});
+
 // Lines are released before READY=1, as gpioset -m exit does.
 int notify_ready_and_wait();
 

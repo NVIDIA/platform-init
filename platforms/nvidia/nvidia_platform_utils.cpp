@@ -42,6 +42,23 @@ void iox_bind(unsigned bus, unsigned addr)
         std::cerr << std::format("iox_bind: {}-{:04x} FAILED\n", bus, addr);
 }
 
+bool iox_wait(unsigned bus, unsigned addr, std::chrono::seconds timeout)
+{
+    using namespace std::chrono_literals;
+    const auto path =
+        std::format("/sys/bus/i2c/drivers/pca953x/{}-{:04x}", bus, addr);
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+        if (std::filesystem::exists(path))
+            return true;
+        std::this_thread::sleep_for(1s);
+    }
+    std::cerr << std::format("iox_wait: {}-{:04x} not present after {}s\n", bus,
+                             addr, timeout.count());
+    return false;
+}
+
 int notify_ready_and_wait()
 {
     gpio::release_all();
