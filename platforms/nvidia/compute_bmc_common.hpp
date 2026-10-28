@@ -13,8 +13,6 @@ namespace nvidia
 bool iox_wait(unsigned bus, unsigned addr,
               std::chrono::seconds timeout = std::chrono::seconds{30});
 
-void i2c_mux_bind(unsigned bus, unsigned addr);
-
 enum class GpioLevel
 {
     Low,

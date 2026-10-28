@@ -23,21 +23,6 @@ bool iox_wait(unsigned bus, unsigned addr, std::chrono::seconds timeout)
     return false;
 }
 
-void i2c_mux_bind(unsigned bus, unsigned addr)
-{
-    const auto path =
-        std::format("/sys/bus/i2c/drivers/pca954x/{}-{:04x}", bus, addr);
-    if (std::filesystem::exists(path))
-        return;
-    if (std::ofstream f{"/sys/bus/i2c/drivers/pca954x/bind"}; f)
-    {
-        f << std::format("{}-{:04x}", bus, addr);
-        std::cerr << std::format("i2c_mux_bind: {}-{:04x} bound\n", bus, addr);
-    }
-    else
-        std::cerr << std::format("i2c_mux_bind: {}-{:04x} FAILED\n", bus, addr);
-}
-
 namespace detail
 {
 
