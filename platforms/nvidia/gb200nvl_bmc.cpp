@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2025 NVIDIA
 
-// Platform initialization daemon for meta-gb200nvl-bmc.
-// Replaces bmc_ready.sh from bmc-post-boot-cfg.
-// GPIO line names sourced from aspeed-bmc-nvidia-gb200nvl-bmc.dts.
+// Platform init for gb200nvl-bmc.
 
-#include "platform_utils.hpp"
+#include "compute_bmc_common.hpp"
 #include "utilities.hpp"
 
 #include <systemd/sd-daemon.h>
@@ -19,7 +17,6 @@
 
 using namespace std::chrono_literals;
 
-// max31790 fan controller I2C addresses on bus 6
 static constexpr std::array<uint8_t, 4> fan_ctrl_addrs{
     {0x20, 0x23, 0x2c, 0x2f}};
 
@@ -30,9 +27,25 @@ static constexpr std::array<const char*, 4> max31790_keys{
 namespace nvidia
 {
 
-// Source: update-power-led-config.sh
-// Selects the phosphor-led-manager power-LED config based on whether the
-// DC-SCM LED GPIO line is present in the running kernel.
+static bool wait_gpio_high(
+    const char* name, int retries = 100,
+    std::chrono::milliseconds delay = std::chrono::milliseconds{100})
+{
+    std::cerr << std::format("wait_gpio_high: waiting for {}\n", name);
+    for (int i = 0; i < retries; ++i)
+    {
+        if (gpio::get(name) > 0)
+        {
+            std::cerr << std::format("wait_gpio_high: {} asserted\n", name);
+            return true;
+        }
+        std::this_thread::sleep_for(delay);
+    }
+    std::cerr << std::format("wait_gpio_high: TIMEOUT {} after {} × {}ms\n",
+                             name, retries, delay.count());
+    return false;
+}
+
 static void setup_led_config()
 {
     std::error_code ec;
@@ -49,8 +62,6 @@ static void setup_led_config()
         std::cerr << std::format("setup_led_config: {}\n", ec.message());
 }
 
-// Source: update-button-config.sh
-// Selects the phosphor-buttons GPIO config based on DC-SCM button presence.
 static void setup_button_config()
 {
     std::error_code ec;
@@ -65,9 +76,6 @@ static void setup_button_config()
         std::cerr << std::format("setup_button_config: {}\n", ec.message());
 }
 
-// Source: io-board-detect.sh
-// Probes the BP CPLD on bus 17 or 29 to detect CX7 vs CX8 IO board and
-// copies the appropriate CPLD, PLDM, EM, and bmcweb config files.
 static void io_board_detect()
 {
     static const std::array<std::pair<const char*, const char*>, 4> cx8_files{{
@@ -122,7 +130,6 @@ static void io_board_detect()
         gpio::set("SEC_MCU_RST_N-O", 0);
     }
 
-    // Create cpldmanager.env symlink
     const char* env_src = cx8 ? "/etc/cpldupdate/cpldmanager_cx8.env"
                               : "/etc/cpldupdate/cpldmanager_cx7.env";
     std::error_code ec;
@@ -133,8 +140,6 @@ static void io_board_detect()
                                  ec.message());
 }
 
-// Bind max31790 driver to all four fan controllers.
-// Returns true if all bound (or already bound).
 static bool max31790_bind_all()
 {
     bool ok = true;
@@ -157,13 +162,9 @@ static void max31790_unbind_all()
             f << k;
 }
 
-// Set all fan PWM outputs to 100% and stop phosphor-pid-control.
-// Called only on tray-detection timeout.
 static void fan_set_emergency_speed()
 {
     std::cerr << "fan_init: tray detection timeout — setting fans to 100%\n";
-    // Best-effort: if pid-control cannot be stopped it keeps driving the fans
-    // against the manual PWM below, so surface the failure.
     const int rc = std::system("systemctl stop phosphor-pid-control");
     if (rc != 0)
     {
@@ -188,7 +189,6 @@ static void fan_set_emergency_speed()
     }
 }
 
-// Wait for EntityManager to publish the fan tray object.
 static bool wait_for_em_fan_object(std::chrono::seconds timeout)
 {
     using namespace std::chrono_literals;
@@ -217,20 +217,11 @@ static bool wait_for_em_fan_object(std::chrono::seconds timeout)
     return false;
 }
 
-// Source: fan-init.sh
-// Configures and rebinds max31790 fan controllers:
-//   - Enables 10 s hardware watchdog (reg 0x00 bit 2)
-//   - Sets PWM5/6 channels to TACH input mode on 0x20 and 0x2c
-//   - Enables TACH counting on all controllers (regs 0x02–0x05)
-//   - Rebinds driver so it re-reads the new hardware configuration
-//   - Waits up to 60 s for Entity Manager fan tray object
-//   - Clears watchdog status bit (reg 0x00 bit 0)
 static void fan_controller_init()
 {
     std::cerr << "fan_init: binding max31790 controllers\n";
 
-    // Ensure the driver is bound before writing registers.
-    // If not bound after 15 retries, proceed anyway (unbind will be a no-op).
+    // Proceed even if binding never succeeds; the unbind is then a no-op.
     if (!std::filesystem::exists(
             std::string(max31790_driver) + "/" + max31790_keys[0]))
     {
@@ -250,11 +241,11 @@ static void fan_controller_init()
         }
     }
 
-    // Unbind so we can write config registers without needing FORCE mode.
+    // Unbound so the config registers can be written without FORCE mode.
     max31790_unbind_all();
     std::this_thread::sleep_for(100ms);
 
-    // Enable 10 s hardware watchdog (bit 2 of global config register 0x00).
+    // Enable the 10 s hardware watchdog.
     std::cerr << "fan_init: enabling watchdog timers\n";
     for (uint8_t addr : fan_ctrl_addrs)
     {
@@ -271,7 +262,7 @@ static void fan_controller_init()
         }
     }
 
-    // Convert PWM5 and PWM6 to TACH input on controllers 0x20 and 0x2c.
+    // PWM5/6 as TACH inputs.
     for (uint8_t addr : {uint8_t{0x20}, uint8_t{0x2c}})
     {
         try
@@ -287,7 +278,7 @@ static void fan_controller_init()
         }
     }
 
-    // Enable TACH input counting on all four controllers (regs 0x02–0x05).
+    // Enable TACH counting.
     for (uint8_t addr : fan_ctrl_addrs)
     {
         try
@@ -303,14 +294,12 @@ static void fan_controller_init()
         }
     }
 
-    // Rebind so the driver re-reads the updated hardware configuration.
     max31790_bind_all();
 
-    // Wait for Entity Manager to publish the fan tray D-Bus object.
     std::cerr << "fan_init: waiting for tray detection\n";
     const bool tray_found = wait_for_em_fan_object(60s);
 
-    // Clear watchdog status bit (bit 0 of reg 0x00).
+    // Clear the watchdog status bit.
     max31790_unbind_all();
     std::this_thread::sleep_for(100ms);
 
@@ -337,10 +326,7 @@ static void fan_controller_init()
         std::cerr << "fan_init: tray detected, init complete\n";
 }
 
-// Source: create_eeprom_devices() in create_eeprom_devices.sh
-// Binds EEPROMs that only respond after FPGA_READY asserts.
-// DC-SCM (bus 3, 0x57) and PDB/Module-1 FRU are probed or left to
-// entity-manager.
+// These only respond after FPGA_READY asserts.
 static constexpr std::array<EepromDevice, 14> boot_eeproms{{
     {1, 0x54, "24c02", "CBC 0 FRU", false},
     {1, 0x55, "24c02", "CBC 1 FRU", false},
@@ -358,8 +344,6 @@ static constexpr std::array<EepromDevice, 14> boot_eeproms{{
     {33, 0x50, "24c64", "Module 1 IO Board", false},
 }};
 
-// Source: bind_i2c_muxes() in bmc_ready.sh
-// Binds a pca954x I2C mux and sets idle_state after binding.
 static void bind_i2c_mux(unsigned bus, unsigned addr, int idle_state)
 {
     const auto key = std::format("{}-{:04x}", bus, addr);
@@ -378,7 +362,6 @@ static void bind_i2c_mux(unsigned bus, unsigned addr, int idle_state)
         f << idle_state;
 }
 
-// Source: bind_hsc() in bmc_ready.sh
 static void bind_hsc(const char* key)
 {
     if (std::ofstream f{"/sys/bus/i2c/drivers/lm25066/bind"}; f)
@@ -387,8 +370,7 @@ static void bind_hsc(const char* key)
         std::cerr << std::format("bind_hsc: {} failed\n", key);
 }
 
-// Source: bmc_set_pdb_vr() in bmc_ready.sh
-// Configures GB200 PDB VR DC loadline to reduce input peak current.
+// PDB VR DC loadline, lowered to reduce input peak current.
 static void set_pdb_vr()
 {
     for (uint8_t addr :
@@ -406,7 +388,6 @@ static void set_pdb_vr()
     }
 }
 
-// Source: enable_hmc_cpld_pex_signature_checking() in bmc_ready.sh
 static void enable_hmc_cpld_pex_signature_checking()
 {
     for (int i = 0; i < 20; ++i)
@@ -438,8 +419,6 @@ int init_gb200nvl_bmc()
 {
     std::cerr << "gb200nvl-bmc: platform init start\n";
 
-    // If standby power is not yet asserted, put outputs into safe initial
-    // state.
     if (gpio::get("STBY_POWER_PG-I") == 0)
     {
         gpio::set("RUN_POWER_EN-O", 0);
@@ -459,7 +438,7 @@ int init_gb200nvl_bmc()
         return EXIT_FAILURE;
     }
 
-    // Bind I2C muxes — must happen before binding downstream devices.
+    // Muxes before the devices behind them.
     bind_i2c_mux(5, 0x71, -1);
     bind_i2c_mux(5, 0x72, -1);
     bind_i2c_mux(5, 0x73, -2);
@@ -467,19 +446,16 @@ int init_gb200nvl_bmc()
     bind_i2c_mux(5, 0x76, -1);
     bind_i2c_mux(5, 0x77, -2);
 
-    // Bind HSC sensors (lm25066 — powered by standby).
     bind_hsc("6-0012");
     bind_hsc("6-0014");
 
-    // Bind GPIO expanders (pca953x).
     iox_bind(4, 0x21);
     iox_bind(9, 0x20);
     iox_bind(9, 0x21);
     iox_bind(9, 0x27);
     iox_bind(9, 0x74);
 
-    // IO board expanders on virtual buses behind pca954x muxes — use
-    // new_device because they have no DTS entry.
+    // No DTS entry for these expanders behind the muxes.
     if (std::filesystem::exists("/sys/bus/i2c/devices/i2c-21"))
         i2c::new_device(21, 0x20, "pca9555");
     else
@@ -490,8 +466,7 @@ int init_gb200nvl_bmc()
     else
         std::cerr << "gb200nvl-bmc: i2c-33 absent, skipping 33-0021\n";
 
-    // DC-SCM GPIO expander on bus 9 addr 0x76 is optional; probe before
-    // binding.
+    // Optional DC-SCM expander.
     {
         try
         {
@@ -503,7 +478,6 @@ int init_gb200nvl_bmc()
         {}
     }
 
-    // USB hub reset: assert low for 1 s then release.
     gpio::set("USB_HUB_RESET_L-O", 0);
     gpio::set("SEC_USB2_HUB_RST_L-O", 0);
     std::this_thread::sleep_for(1s);
@@ -513,9 +487,7 @@ int init_gb200nvl_bmc()
     gpio::set("SGPIO_BMC_EN-O", 1);
     gpio::set("BMC_EROT_FPGA_SPI_MUX_SEL-O", 1);
 
-    // WAR: BMC was hard-reset (e.g. ERoT SRST during FW update) while the host
-    // was running — FPGA and RUN_POWER are already asserted; restore GPIO state
-    // so host power stays stable.
+    // WAR: BMC reset while the host runs; keep host power up.
     if (gpio::get("FPGA_READY_BMC-I") == 1 && gpio::get("RUN_POWER_PG-I") == 1)
     {
         std::cerr
@@ -527,7 +499,6 @@ int init_gb200nvl_bmc()
         gpio::set("SYS_RST_IN_L-O", gpio::get("SYS_RST_OUT_L-I"));
     }
 
-    // If HMC is not yet ready, set standby power GPIO state.
     if (gpio::get("HMC_READY-I") == 0)
     {
         gpio::set("PWR_BRAKE_L-O", 1);
@@ -536,8 +507,7 @@ int init_gb200nvl_bmc()
         gpio::set("SYS_RST_IN_L-O", 0);
     }
 
-    // Arm edge events before releasing resets to avoid missing fast
-    // transitions.
+    // Armed before the resets are released so fast edges are not missed.
     gpio::Event hmc_ready("HMC_READY-I", 1);
     gpio::Event fpga_ready("FPGA_READY_BMC-I", 1);
     gpio::Event sec_fpga_ready("SEC_FPGA_READY_BMC-I", 1);
@@ -568,10 +538,9 @@ int init_gb200nvl_bmc()
     if (sec_fpga_ready.wait() != gpio::EventResult::Asserted)
         std::cerr << "gb200nvl-bmc: WARNING: SEC_FPGA_READY_BMC-I timeout\n";
 
-    // Bind EEPROMs now that FPGA (and HMC) are up.
     eeprom_init(boot_eeproms);
 
-    // DC-SCM EEPROM on bus 3 addr 0x57 is optional; probe before binding.
+    // Optional DC-SCM EEPROM.
     {
         try
         {
@@ -583,7 +552,6 @@ int init_gb200nvl_bmc()
         {}
     }
 
-    bmc_boot_banner();
     set_pdb_vr();
 
     if (filesystem_check() != EXIT_SUCCESS)
@@ -592,13 +560,12 @@ int init_gb200nvl_bmc()
         return EXIT_FAILURE;
     }
 
-    // Config selection — GPIO probes before READY so dependent services
-    // read the correct files on their first start.
+    // Before READY so dependent services start with the right config.
     setup_led_config();
     setup_button_config();
     io_board_detect();
 
-    // Assert BMC_READY-O via LED sysfs (gpio-leds driver owns this line).
+    // gpio-leds owns BMC_READY-O.
     if (std::ofstream f{"/sys/class/leds/bmc_ready_noled/brightness"}; f)
         f << "1\n";
     else
@@ -610,7 +577,7 @@ int init_gb200nvl_bmc()
     gpio::release_all();
 
     static constexpr std::array<unsigned, 1> rtc_buses{{4}};
-    rtc_detect(rtc_buses);
+    compute::rtc_detect(rtc_buses);
 
     enable_hmc_cpld_pex_signature_checking();
     fan_controller_init();
