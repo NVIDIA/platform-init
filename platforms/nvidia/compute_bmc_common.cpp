@@ -423,7 +423,7 @@ bool reset_usb_hub_if_absent(std::string_view tag, const char* line,
     std::cerr << std::format("{}: {} missing, resetting {}\n", tag, tty, line);
     if (usb_hub_reset(line))
         return true;
-    std::cerr << std::format("{}: FATAL: {} reset failed\n", tag, line);
+    std::cerr << std::format("{}: {} reset failed\n", tag, line);
     return false;
 }
 
