@@ -42,6 +42,7 @@ platform_srcs = files(
     'platforms/nvidia/vr_pdb.cpp',
     'platforms/nvidia/vr_quark_bmc.cpp',
     'platforms/nvidia/vru_nvl_bmc.cpp',
+    'platforms/nvidia/vru_nvl_hmc.cpp',
 )
 
 executable(
