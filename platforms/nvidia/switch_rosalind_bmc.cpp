@@ -71,6 +71,12 @@ static const std::array<SysfsGpioPin, 20> rosalind_sysfs_gpios{{
 
 static constexpr int rosalind_gpio_stby_pg = 612;
 
+// CPLD leakage_conn_en at 5-0x31: 16-bit register offset, then the value.
+static constexpr unsigned rosalind_leak_cpld_bus = 5;
+static constexpr uint8_t rosalind_leak_cpld_addr = 0x31;
+static constexpr uint16_t rosalind_leakage_conn_en_reg = 0x2539;
+static constexpr uint8_t rosalind_leakage_conn_en_on = 0x01;
+
 // Fallback; bmc-early-i2c-init.service normally creates this device.
 static constexpr std::array<EepromDevice, 1> rosalind_vpd_device{{
     {4, 0x51, "24c512", "BMC VPD", false},
@@ -536,9 +542,12 @@ int init_switch_rosalind_bmc()
         if (uboot_env_get("leak_rj45_en") == "1")
         {
             static constexpr std::array<uint8_t, 3> leakage_conn_en{
-                0x25, 0x39, 0x01};
-            if (const int rc = i2c::raw_transfer(5, 0x31, leakage_conn_en,
-                                                 std::span<uint8_t>{});
+                static_cast<uint8_t>(rosalind_leakage_conn_en_reg >> 8),
+                static_cast<uint8_t>(rosalind_leakage_conn_en_reg & 0xff),
+                rosalind_leakage_conn_en_on};
+            if (const int rc = i2c::raw_transfer(
+                    rosalind_leak_cpld_bus, rosalind_leak_cpld_addr,
+                    leakage_conn_en, std::span<uint8_t>{});
                 rc != 0)
             {
                 std::cerr << std::format("switch-rosalind-bmc: leakage_conn_en "
@@ -597,8 +606,13 @@ int init_switch_rosalind_bmc()
         // enable_write_protect_on_boot.service sets it again later.
         std::cerr << "switch-rosalind-bmc: disabling write protect to allow "
                      "the background copy\n";
-        dbus_set_write_protect_init("/xyz/openbmc_project/software/Chassis_0",
-                                    false);
+        // Not fatal: the copy then runs with write protect as it was.
+        if (!dbus_set_write_protect_init(
+                "/xyz/openbmc_project/software/Chassis_0", false))
+        {
+            std::cerr << "switch-rosalind-bmc: write protect left unchanged; "
+                         "continuing\n";
+        }
     }
 
     sd_notify(0, "READY=1");
