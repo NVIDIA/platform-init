@@ -71,6 +71,17 @@ script_base = 'platforms/nvidia/scripts/platforms'
 
 subdir('emmc-manager')
 
+# Platforms whose machine layer installs an eMMC layout (emmc-layout.conf)
+# for nvidia-emmc-partition. The layout parser and its tests build always.
+emmc_partition_platforms = [
+    'nvidia-vr-nvl-bmc',
+    'nvidia-vr-nvl-hmc',
+    'nvidia-vr-c2-bmc',
+    'nvidia-vr-quark-bmc',
+    'nvidia-hgxr-hmc',
+]
+subdir('emmc-partition')
+
 # Only spc6-ast2600-bmc sets BIND_I3C_ON_BIOS_BOOT=1; elsewhere the handler
 # defaults it to 0, so the unit would never be started.
 if platform_name.contains('spc6-ast2600')
