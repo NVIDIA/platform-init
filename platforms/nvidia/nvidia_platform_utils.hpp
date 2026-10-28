@@ -94,7 +94,8 @@ int filesystem_check(std::string_view rwfs_mount = "/run/initramfs/rw",
 // recovery.
 int filesystem_check_mtd(std::string_view rwfs_mount = "/run/initramfs/rw",
                          std::string_view work_path = "/run/initramfs/rw/work",
-                         std::string_view mtd_device = "/dev/mtd6");
+                         std::string_view mtd_device = "/dev/mtd6",
+                         bool clear_recovery_flag = true);
 
 // emmc-rwfs check_rofs: work/ must exist and work/work be creatable.
 bool check_rofs();

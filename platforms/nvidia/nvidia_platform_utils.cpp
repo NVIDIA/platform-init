@@ -197,16 +197,21 @@ int filesystem_check(std::string_view rwfs_mount, std::string_view work_path)
 
 int filesystem_check_mtd(std::string_view rwfs_mount,
                          std::string_view work_path,
-                         std::string_view mtd_device)
+                         std::string_view mtd_device, bool clear_recovery_flag)
 {
     using namespace std::chrono_literals;
 
+    // A daemon that may log reports and clears the flag where there is one
+    // (hmc-mailbox on the VR HMCs); elsewhere it is cleared here.
     if (uboot_env_get("dataflashrecovery") == "yes" &&
         detail::is_mounted(rwfs_mount))
     {
         std::cerr << "filesystem_check_mtd: RWFS recovered after a flash "
                      "erase\n";
-        uboot_env_set("dataflashrecovery");
+        if (clear_recovery_flag)
+        {
+            uboot_env_set("dataflashrecovery");
+        }
     }
 
     if (!detail::is_mounted(rwfs_mount))
