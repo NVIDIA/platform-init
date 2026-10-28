@@ -22,6 +22,7 @@ platform_srcs = files(
     'platforms/intel/acrp.cpp',
     'platforms/intel/jcrp.cpp',
     'platforms/nvidia/compute_bmc_common.cpp',
+    'platforms/nvidia/compute_hmc_common.cpp',
     'platforms/nvidia/gb200.cpp',
     'platforms/nvidia/gb200nvl_bmc.cpp',
     'platforms/nvidia/gb200nvl_hmc.cpp',
