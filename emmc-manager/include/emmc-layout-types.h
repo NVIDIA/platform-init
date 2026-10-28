@@ -6,12 +6,21 @@
 #pragma once
 
 #include <cstdint>
+#include <span>
 
 namespace emmc::layout
 {
 
 inline constexpr std::uint64_t kSectorsPerMiB = 2048ULL;
 inline constexpr std::uint64_t kSectorsPerGiB = 1024ULL * kSectorsPerMiB;
+
+// A directory on a partition bind-mounted elsewhere once the partition is
+// mounted.
+struct EmmcBind
+{
+    const char* dir;
+    const char* target;
+};
 
 struct EmmcPart
 {
@@ -28,6 +37,7 @@ struct EmmcPart
     const char* mount;     // nullptr for rwfs / Extended
     const char*
         purpose; // "rwfs" for the initramfs-owned partition; else nullptr
+    std::span<const EmmcBind> binds{};
 };
 
 } // namespace emmc::layout

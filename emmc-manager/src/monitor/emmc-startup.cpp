@@ -13,6 +13,8 @@
 
 #include "emmc-ext-csd.hpp"
 
+#include <sys/mount.h>
+
 #include <array>
 #include <cerrno>
 #include <chrono>
@@ -188,6 +190,32 @@ void consumeSecureErasePartition()
 
 } // namespace
 
+// Bind-mounts a mounted partition's directories to their targets, as
+// obmc-console-cpu-log-dirs.sh did for the console logs.
+void bindDirs(const emmc::layout::EmmcPart& p)
+{
+    if (p.binds.empty() || !format::isMounted(p.mount))
+    {
+        return;
+    }
+    for (const auto& b : p.binds)
+    {
+        const std::string src = std::format("{}/{}", p.mount, b.dir);
+        std::error_code ec;
+        std::filesystem::create_directories(src, ec);
+        std::filesystem::create_directories(b.target, ec);
+        if (format::isMounted(b.target))
+        {
+            continue;
+        }
+        if (::mount(src.c_str(), b.target, nullptr, MS_BIND, nullptr) != 0)
+        {
+            std::cerr << std::format("monitor: bind {} {}: {}\n", src, b.target,
+                                     std::strerror(errno));
+        }
+    }
+}
+
 void mountPartitions()
 {
     for (const auto& p : emmc::layout::kPartitions)
@@ -197,6 +225,7 @@ void mountPartitions()
             continue;
         }
         mountOrRecover(p.num, p.mount);
+        bindDirs(p);
     }
 }
 
