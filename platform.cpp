@@ -5,6 +5,7 @@
 #include "i2c.hpp"
 #include "intel/platforms.hpp"
 #include "nvidia/platforms.hpp"
+#include "nvidia/switch_preps.hpp"
 #include "utilities.hpp"
 
 #include <fcntl.h>
@@ -59,9 +60,17 @@ int main(int argc, char** argv)
         ->add_option("platform_name", platform_name,
                      "Name of the platform to init")
         ->required();
+    CLI::App* preps_sub = app.add_subcommand(
+        "preps", "Stage the platform-specific files before udev starts");
+    preps_sub->add_option("platform_name", platform_name)->required();
     app.require_subcommand();
 
     CLI11_PARSE(app, argc, argv)
+
+    if (preps_sub->parsed())
+    {
+        return nvidia::switch_plat_preps(platform_name);
+    }
 
     const auto* it = std::ranges::find_if(
         init_functions,
