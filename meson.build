@@ -75,6 +75,7 @@ script_base = 'platforms/nvidia/scripts/platforms'
 if platform_name in [
     'nvidia-switch-ast2700-bmc',
     'nvidia-switch-rosalind-bmc',
+    'nvidia-switch-spc6-ast2600-bmc',
 ]
     configure_file(
         input: 'bmc-plat-specific-preps.service.in',

@@ -109,7 +109,7 @@ static void preps_write(std::string_view name, std::string_view value)
 }
 
 // cp: a new file gets the source mode under the umask.
-static void preps_copy(std::string_view src, std::string_view dst)
+static void preps_copy(const std::string& src, std::string_view dst)
 {
     const auto from = std::format("/etc/plat_specific/{}", src);
     const auto to = std::format("{}/{}", plat_tmp, dst);
@@ -316,6 +316,63 @@ static void preps_rosalind(const std::string& sku)
     preps_link_sku_dir(sku);
 }
 
+struct Spc6Ast2600Sku
+{
+    std::string_view hid;
+    std::string_view rules;
+    std::string_view blacklist;
+    std::string_view a2d;
+};
+
+static constexpr std::array<Spc6Ast2600Sku, 5> spc6_ast2600_skus{{
+    {"hid183", "hi183", "hi187", "hi183"},
+    {"hid187", "hi191", "hi187", "hi187"},
+    {"hid188", "hi188", "hi188", "hi188"},
+    {"hid191", "hi191", "hi191", "hi191"},
+    {"hid193", "hi193", "hi193", "hi193"},
+}};
+
+static void preps_spc6_ast2600(const std::string& sku)
+{
+    static constexpr std::array<std::string_view, 6> one_asic{
+        "hid180", "hid183", "hid189", "hid190", "hid191", "hid193"};
+    std::string_view asics;
+    if (sku == "hid187" || sku == "hid188")
+        asics = "4asic";
+    else if (std::ranges::find(one_asic, sku) != one_asic.end())
+        asics = "1asic";
+    if (asics.empty())
+        std::cerr << std::format("No platform specific entity manager files "
+                                 "defined for sku {}\n",
+                                 sku);
+    else
+    {
+        preps_write("asic_num", asics == "4asic" ? "0x04" : "0x01");
+        preps_copy(std::format("spc6_mctp_bmc_target_configuration_{}.json",
+                               asics),
+                   "spc6_mctp_bmc_target_configuration.json");
+        preps_copy(std::format("spc6_static_inventory_{}.json", asics),
+                   "spc6_static_inventory.json");
+    }
+
+    if (const auto* it =
+            std::ranges::find(spc6_ast2600_skus, sku, &Spc6Ast2600Sku::hid);
+        it != spc6_ast2600_skus.end())
+    {
+        preps_copy(std::format("71-hw-management-events_{}.rules", it->rules),
+                   "71-hw-management-events.rules");
+        preps_copy(std::format("blacklist_{}.json", it->blacklist),
+                   "blacklist.json");
+        preps_copy(std::format("a2d_leakage_config_{}.json", it->a2d),
+                   "a2d_leakage_config.json");
+    }
+    else
+        std::cerr << std::format(
+            "No platform specific udev rules file defined for sku {}\n", sku);
+
+    preps_link_sku_dir(sku);
+}
+
 int switch_plat_preps(std::string_view platform_name)
 {
     const auto sku = preps_get_sku();
@@ -326,6 +383,8 @@ int switch_plat_preps(std::string_view platform_name)
         preps_ast2700(sku);
     else if (platform_name == "nvidia-switch-rosalind-bmc")
         preps_rosalind(sku);
+    else if (platform_name == "nvidia-switch-spc6-ast2600-bmc")
+        preps_spc6_ast2600(sku);
     else
     {
         std::cerr << std::format("no preps for platform {}\n", platform_name);
