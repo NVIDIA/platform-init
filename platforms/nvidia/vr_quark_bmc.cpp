@@ -59,6 +59,12 @@ static void select_hmc_mux()
 }
 
 static constexpr std::array<unsigned, 2> rtc_buses{{6, 19}};
+// The RTC parts the BMC module may carry, at 0x6f.
+static constexpr std::array<RtcId, 2> rtc_parts{{
+    {0x6f, 0x10, 0x5c, "nct3018y"},
+    {0x6f, 0x10, 0x4e, "pcf85053a"},
+}};
+static constexpr compute::Rtc rtc{rtc_buses, rtc_parts};
 
 static bool wait_mcu_ok(const char* line)
 {
@@ -102,7 +108,7 @@ int init_vr_quark_bmc()
     compute::enable_pdb_standby_power(tag, 9);
     if (!compute::wait_bmc_standby_power(tag, compute::PgSource::Monitor,
                                          "STBY_POWER_PG-I", "STBY_POWER_PG-I"))
-        return compute::init_failed(rtc_buses);
+        return compute::init_failed(rtc);
 
     gpio::set("HMC_RST_R_L-O", 1);
 
@@ -112,7 +118,7 @@ int init_vr_quark_bmc()
     gpio::set("USB3_MUX_EN_L-O", 0);
 
     if (!compute::wait_pdb_standby_power(tag, 9, compute::PgSource::Monitor))
-        return compute::init_failed(rtc_buses);
+        return compute::init_failed(rtc);
 
     compute::wait_iox(tag, 0x20, {2});
 
@@ -127,10 +133,10 @@ int init_vr_quark_bmc()
                                             compute::PgSource::Monitor) ||
         !wait_hpm_mcu_ok() ||
         !compute::wait_boards_ready(tag, hpm_cpld_ready, "CPLD_READY"))
-        return compute::init_failed(rtc_buses);
+        return compute::init_failed(rtc);
 
     if (!compute::check_rofs_and_mtd(tag))
-        return compute::init_failed(rtc_buses);
+        return compute::init_failed(rtc);
 
     if (!iox_present(70, 0x53))
     {
@@ -138,7 +144,7 @@ int init_vr_quark_bmc()
         std::this_thread::sleep_for(cp2112_wait);
     }
 
-    return compute::bmc_ready(tag, rtc_buses);
+    return compute::bmc_ready(tag, rtc);
 }
 
 } // namespace nvidia

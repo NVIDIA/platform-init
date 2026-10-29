@@ -395,72 +395,34 @@ bool reset_usb_hub_if_absent(std::string_view tag, const char* line,
     return false;
 }
 
-struct RtcVariant
+void rtc_detect(const Rtc& rtc)
 {
-    uint8_t device_id;
-    std::string_view driver;
-};
-
-constexpr std::array<RtcVariant, 2> rtc_variants{{
-    {0x5c, "nct3018y"},
-    {0x4e, "pcf85053a"},
-}};
-
-void rtc_detect(std::span<const unsigned> buses, uint8_t addr)
-{
-    for (unsigned bus : buses)
-    {
-        // A DTS-bound driver makes I2C_SLAVE fail with EBUSY; skip the probe.
-        const auto sysfs_dev =
-            std::format("/sys/bus/i2c/devices/{}-{:04x}", bus, addr);
-        if (std::filesystem::exists(sysfs_dev + "/driver"))
-        {
-            std::cerr << std::format(
-                "rtc_detect: bus={} addr={:#x}: already bound to kernel driver\n",
-                bus, addr);
-            return;
-        }
-
-        try
-        {
-            i2c::RawDevice dev{bus, addr};
-            auto id_r = dev.read_byte(0x10);
-            if (!id_r)
-                continue;
-            uint8_t id = *id_r;
-            for (const auto& rtc : rtc_variants)
-            {
-                if (id != rtc.device_id)
-                    continue;
-                std::cerr << std::format(
-                    "rtc_detect: bus={} addr={:#x}: found {} (id={:#x})\n", bus,
-                    addr, rtc.driver, id);
-                i2c::new_device(bus, addr, rtc.driver);
-                return;
-            }
-        }
-        catch (const std::exception& e)
-        {
-            std::cerr << std::format("rtc_detect: bus={}: {}\n", bus, e.what());
-        }
-    }
-    std::cerr << "rtc_detect: no RTC found on any bus\n";
+    if (rtc.buses.empty() || rtc.parts.empty())
+        return;
+    auto found = detect_rtc(rtc.buses, rtc.parts, false);
+    if (!found)
+        return;
+    const auto& part = rtc.parts[found->index];
+    std::cerr << std::format(
+        "rtc_detect: bus={} addr={:#x}: found {} (id={:#x})\n", found->bus,
+        part.addr, part.driver, part.id);
+    i2c::new_device(found->bus, part.addr, part.driver);
 }
 
-int init_failed(std::span<const unsigned> rtc_buses)
+int init_failed(const Rtc& rtc)
 {
-    rtc_detect(rtc_buses);
+    rtc_detect(rtc);
     return EXIT_FAILURE;
 }
 
-int bmc_ready(std::string_view tag, std::span<const unsigned> rtc_buses)
+int bmc_ready(std::string_view tag, const Rtc& rtc)
 {
     std::cerr << std::format("{}: platform init complete\n", tag);
-    if (rtc_buses.empty())
+    if (rtc.buses.empty())
         return notify_ready_and_wait();
     gpio::release_all();
     sd_notify(0, "READY=1");
-    rtc_detect(rtc_buses);
+    rtc_detect(rtc);
     pause();
     return EXIT_SUCCESS;
 }

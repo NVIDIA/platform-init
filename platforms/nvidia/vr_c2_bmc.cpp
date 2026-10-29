@@ -24,7 +24,15 @@ using I2cDev = std::pair<unsigned, uint8_t>;
 
 static constexpr std::array<I2cDev, 2> gpu1_expanders{{{40, 0x20}, {50, 0x20}}};
 static constexpr std::array<I2cDev, 2> e1s_expanders{{{33, 0x20}, {36, 0x20}}};
+
 static constexpr std::array<unsigned, 2> rtc_buses{{5, 19}};
+// The RTC parts the BMC module may carry, at 0x6f.
+static constexpr std::array<RtcId, 2> rtc_parts{{
+    {0x6f, 0x10, 0x5c, "nct3018y"},
+    {0x6f, 0x10, 0x4e, "pcf85053a"},
+}};
+static constexpr compute::Rtc rtc{rtc_buses, rtc_parts};
+
 static constexpr std::chrono::seconds cpld_ready_timeout = 10s;
 static constexpr std::chrono::milliseconds cpld_ready_poll = 100ms;
 
@@ -95,7 +103,7 @@ int init_vr_c2_bmc()
     if (!compute::wait_bmc_standby_power(tag, compute::PgSource::Monitor,
                                          "STBY_POWER_PG-I",
                                          "BMC_PS_3V3_STBY_EN-O"))
-        return compute::init_failed(rtc_buses);
+        return compute::init_failed(rtc);
 
     compute::wait_iox(tag, 0x20, {2});
 
@@ -112,7 +120,7 @@ int init_vr_c2_bmc()
                                      "B0_M0_PS_3V3_STBY_EN-O"))
     {
         std::cerr << "vr-c2-bmc: FATAL: B0_M0 wait_standby_pwr failed\n";
-        return compute::init_failed(rtc_buses);
+        return compute::init_failed(rtc);
     }
 
     if (!wait_gpio_asserted("B0_M0_CPLD_READY-I", GpioLevel::High,
@@ -121,7 +129,7 @@ int init_vr_c2_bmc()
         std::cerr << std::format("vr-c2-bmc: FATAL: B0_M0_CPLD_READY-I failed "
                                  "to assert after {} seconds\n",
                                  cpld_ready_timeout.count());
-        return compute::init_failed(rtc_buses);
+        return compute::init_failed(rtc);
     }
 
     if (gpio_set_released("B0_M1_I2C_SOCAMM_UPHY_SEL-O", 0))
@@ -147,12 +155,12 @@ int init_vr_c2_bmc()
 
     if (!compute::reset_usb_hub_if_absent(tag, "B0_M1_USB1_HUB_RST_L-O",
                                           "/dev/ttyUSB0"))
-        return compute::init_failed(rtc_buses);
+        return compute::init_failed(rtc);
 
     if (!compute::check_rofs_and_mtd(tag))
-        return compute::init_failed(rtc_buses);
+        return compute::init_failed(rtc);
 
-    return compute::bmc_ready(tag, rtc_buses);
+    return compute::bmc_ready(tag, rtc);
 }
 
 } // namespace nvidia

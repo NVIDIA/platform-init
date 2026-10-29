@@ -107,6 +107,28 @@ bool check_rofs();
 // emmc-rwfs check_rw_filesystems.
 bool check_rw_filesystems();
 
+// An external RTC: answers <id> in <reg> at <addr>; id < 0 never matches.
+struct RtcId
+{
+    uint8_t addr;
+    uint8_t reg;
+    int id;
+    std::string_view driver;
+};
+
+struct RtcFound
+{
+    unsigned bus;
+    size_t index;
+};
+
+// First table entry whose ID register matches, buses outer, entries inner.
+// forced (switch rtc-detection.sh): zero-length write probe, then I2C_RDWR
+// read, per entry. Otherwise (VR): stop when a driver already owns
+// table[0].addr, else one SMBus read of table[0] per bus.
+std::optional<RtcFound> detect_rtc(std::span<const unsigned> buses,
+                                   std::span<const RtcId> table, bool forced);
+
 } // namespace nvidia
 
 namespace nvidia::compute

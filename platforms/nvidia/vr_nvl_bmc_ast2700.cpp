@@ -97,6 +97,12 @@ static constexpr std::array<compute::BoardLine, 2> hpm_cpld_ready{{
 
 // rtc-detection.sh's buses.
 static constexpr std::array<unsigned, 2> rtc_buses{{14, 19}};
+// The RTC parts the BMC module may carry, at 0x6f.
+static constexpr std::array<RtcId, 2> rtc_parts{{
+    {0x6f, 0x10, 0x5c, "nct3018y"},
+    {0x6f, 0x10, 0x4e, "pcf85053a"},
+}};
+static constexpr compute::Rtc rtc{rtc_buses, rtc_parts};
 
 int init_vr_nvl_bmc_ast2700()
 {
@@ -126,14 +132,14 @@ int init_vr_nvl_bmc_ast2700()
     compute::enable_pdb_standby_power(tag, 0);
     if (!compute::wait_bmc_standby_power(tag, compute::PgSource::Gpio,
                                          "STBY_POWER_PG-I", "STBY_POWER_PG-I"))
-        return compute::init_failed(rtc_buses);
+        return compute::init_failed(rtc);
 
     gpio::set("HMC_RST_R_L-O", 1);
 
     gpio::set("PDB_12V_EN_N_R-O", 0);
 
     if (!compute::wait_pdb_standby_power(tag, 0, compute::PgSource::Gpio))
-        return compute::init_failed(rtc_buses);
+        return compute::init_failed(rtc);
 
     compute::wait_iox(tag, 0x20, {11, 8});
 
@@ -150,15 +156,15 @@ int init_vr_nvl_bmc_ast2700()
                                             compute::PgSource::Gpio) ||
         !compute::wait_boards_ready(tag, hpm_mcu_ok, "HPM_MCU_OK") ||
         !compute::wait_boards_ready(tag, hpm_cpld_ready, "CPLD_READY"))
-        return compute::init_failed(rtc_buses);
+        return compute::init_failed(rtc);
 
     usb_hub_reset_if_absent("B0_M0_USB_HUB0_RST_L-O", "/dev/ttyUSB0");
     usb_hub_reset_if_absent("B1_M0_USB_HUB0_RST_L-O", "/dev/ttyUSB4");
 
     if (!compute::check_rofs_and_rw(tag))
-        return compute::init_failed(rtc_buses);
+        return compute::init_failed(rtc);
 
-    return compute::bmc_ready(tag, rtc_buses);
+    return compute::bmc_ready(tag, rtc);
 }
 
 } // namespace nvidia

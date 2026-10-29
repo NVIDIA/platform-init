@@ -87,6 +87,13 @@ struct BoardLine
     const char* line;
 };
 
+// The board's external RTC: the parts it may carry, probed on each bus.
+struct Rtc
+{
+    std::span<const unsigned> buses;
+    std::span<const RtcId> parts;
+};
+
 // True when the standby power line is low or unreadable.
 bool bmc_cold_boot(const char* stby_pg_line);
 
@@ -133,16 +140,16 @@ bool check_rofs_and_rw(std::string_view tag);
 bool reset_usb_hub_if_absent(std::string_view tag, const char* line,
                              const char* tty);
 
-// Binds the RTC driver for the NCT3018Y or PCF85053A found at <addr> on
-// the first of <buses> that has one.
-void rtc_detect(std::span<const unsigned> buses, uint8_t addr = 0x6f);
+// Binds the driver of the first <rtc> part found on the first bus that has
+// one.
+void rtc_detect(const Rtc& rtc);
 
-// For an init that stops early: detects the RTC on <rtc_buses>, as
-// rtc-detection.service did whether or not bmc-boot-complete succeeded.
-int init_failed(std::span<const unsigned> rtc_buses);
+// For an init that stops early: detects the RTC, as rtc-detection.service
+// did whether or not bmc-boot-complete succeeded.
+int init_failed(const Rtc& rtc);
 
-// Reports ready to systemd, then detects the RTC on <rtc_buses>, as
-// rtc-detection.service did after bmc-boot-complete.
-int bmc_ready(std::string_view tag, std::span<const unsigned> rtc_buses = {});
+// Reports ready to systemd, then detects the RTC, as rtc-detection.service
+// did after bmc-boot-complete.
+int bmc_ready(std::string_view tag, const Rtc& rtc = {});
 
 } // namespace nvidia::compute

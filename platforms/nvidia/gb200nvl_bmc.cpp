@@ -577,7 +577,11 @@ int init_gb200nvl_bmc()
     gpio::release_all();
 
     static constexpr std::array<unsigned, 1> rtc_buses{{4}};
-    compute::rtc_detect(rtc_buses);
+    static constexpr std::array<RtcId, 2> rtc_parts{{
+        {0x6f, 0x10, 0x5c, "nct3018y"},
+        {0x6f, 0x10, 0x4e, "pcf85053a"},
+    }};
+    compute::rtc_detect({rtc_buses, rtc_parts});
 
     enable_hmc_cpld_pex_signature_checking();
     fan_controller_init();
