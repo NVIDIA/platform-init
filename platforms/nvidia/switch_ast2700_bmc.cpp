@@ -4,6 +4,7 @@
 // Platform init for the switch AST2700 BMCs.
 
 #include "switch_common.hpp"
+#include "switch_mcu.hpp"
 #include "utilities.hpp"
 
 #include <systemd/sd-daemon.h>
@@ -46,9 +47,6 @@ static constexpr std::string_view ast2700_cartridge_script =
     "/usr/bin/hw-management-bmc-copy-cartridge-data.sh";
 static constexpr std::string_view ast2700_cartridge_config =
     "/etc/hw-mgmt-bmc-copy-cartridge-data.json";
-static constexpr std::string_view ast2700_mcu_script =
-    "/usr/bin/hw-management-mcu.sh";
-static constexpr std::string_view ast2700_mcu_config = "/etc/mcu-devices.json";
 
 struct GpioPinConfig
 {
@@ -439,14 +437,7 @@ int init_switch_ast2700_bmc()
                 "switch-ast2700-bmc");
         }
 
-        // TODO(HID197): ship mcu-devices.json once its GPIO polarity is known.
-        if (std::filesystem::exists(ast2700_mcu_script) &&
-            std::filesystem::exists(ast2700_mcu_config))
-        {
-            shell_out(std::format("bash -c '. {} && hw_mgmt_mcu_reset'",
-                                  ast2700_mcu_script),
-                      "switch-ast2700-bmc");
-        }
+        hw_mgmt_mcu_reset();
 
         const auto leakSource = platform_feature("LEAK_DETECTION_SOURCE");
         if (leakSource == "mcu")
