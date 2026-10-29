@@ -3,6 +3,8 @@
 
 #include "switch_common.hpp"
 
+#include <nlohmann/json.hpp>
+
 namespace nvidia
 {
 
@@ -935,6 +937,260 @@ int bind_i3c_controller()
 
     std::cerr << "bind_i3c_controller: I3C driver modules loaded\n";
     return EXIT_SUCCESS;
+}
+
+} // namespace nvidia
+
+namespace nvidia
+{
+
+namespace
+{
+
+using BomMap = std::map<std::string, std::map<std::string, std::string>>;
+
+std::string trim(std::string_view s)
+{
+    constexpr std::string_view ws = " \t\n";
+    const auto b = s.find_first_not_of(ws);
+    if (b == std::string_view::npos)
+        return {};
+    return std::string{s.substr(b, s.find_last_not_of(ws) - b + 1)};
+}
+
+std::string join_words(std::string_view s)
+{
+    std::istringstream in{std::string{s}};
+    std::string out;
+    for (std::string w; in >> w;)
+        out += (out.empty() ? "" : " ") + w;
+    return out;
+}
+
+// Same checks as hw-management-devtree-json-parser.sh: any bad entry rejects
+// the whole file.
+std::optional<BomMap> parse_bom_json(std::string_view text)
+{
+    const auto doc = nlohmann::json::parse(text, nullptr, false);
+    if (!doc.is_object())
+        return std::nullopt;
+    constexpr std::string_view ws = " \t\n\r\f\v";
+    BomMap map;
+    for (const auto& [section, entries] : doc.items())
+    {
+        if (section.find_first_of(ws) != std::string::npos ||
+            !entries.is_array())
+            return std::nullopt;
+        auto& out = map[section];
+        for (const auto& e : entries)
+        {
+            if (!e.is_object() || !e.contains("key") || !e.contains("spec") ||
+                !e["key"].is_string() || !e["spec"].is_string())
+                return std::nullopt;
+            const auto key = e["key"].get<std::string>();
+            const auto spec = e["spec"].get<std::string>();
+            if (key.empty() || key.find_first_of(ws) != std::string::npos ||
+                spec.find_first_not_of(ws) == std::string::npos ||
+                spec.find_first_of("\r\n") != std::string::npos ||
+                out.contains(key))
+                return std::nullopt;
+            out[key] = trim(spec);
+        }
+    }
+    return map;
+}
+
+struct DevtreeName
+{
+    char category;
+    char code;
+    std::string_view name;
+};
+
+constexpr std::array<DevtreeName, 44> devtree_names{{
+    {'T', 'a', "lm75"},       {'T', 'b', "tmp102"},    {'T', 'c', "adt75"},
+    {'T', 'd', "stts751"},    {'T', 'e', "tmp75"},     {'T', 'f', "tmp421"},
+    {'T', 'g', "lm90"},       {'T', 'h', "emc1412"},   {'T', 'i', "tmp411"},
+    {'T', 'j', "tmp1075"},    {'T', 'k', "tmp451"},    {'T', 'l', "spd5118"},
+    {'R', 'a', "mp2975"},     {'R', 'b', "mp2888"},    {'R', 'c', "tps53679"},
+    {'R', 'd', "xdpe12284"},  {'R', 'e', "152x4"},     {'R', 'f', "pmbus"},
+    {'R', 'g', "mp2891"},     {'R', 'h', "xdpe1a2g7"}, {'R', 'i', "mp2855"},
+    {'R', 'j', "mp29816"},    {'R', 'k', "mp2845"},    {'R', 'l', "raa228943"},
+    {'R', 'm', "mp29816-6x"}, {'A', 'a', "max11603"},  {'A', 'b', "ads1015"},
+    {'O', 'a', "pmbus"},      {'O', 'b', "pmbus"},     {'O', 'c', "pmbus"},
+    {'O', 'd', "raa228000"},  {'O', 'e', "mp29502"},   {'O', 'f', "raa228004"},
+    {'H', 'a', "lm5066"},     {'H', 'c', "lm5066i"},   {'H', 'd', "mp5926"},
+    {'E', 'a', "24c02"},      {'E', 'c', "24c08"},     {'E', 'e', "24c32"},
+    {'E', 'g', "24c128"},     {'E', 'i', "24c512"},    {'P', 'a', "icp201xx"},
+    {'P', 'b', "bmp390"},     {'P', 'c', "lps22"},
+}};
+
+std::string_view devtree_name(char category, std::string_view code)
+{
+    for (const auto& n : devtree_names)
+        if (n.category == category && code.size() == 1 && n.code == code[0])
+            return n.name;
+    return {};
+}
+
+// Board key to devtree.json section.
+std::string_view devtree_section(char board)
+{
+    constexpr std::string_view keys = "CSFPLKOD";
+    constexpr std::array<std::string_view, 8> sections{
+        "comex", "swb", "fan", "pwr", "platform", "clk", "port", "dpu"};
+    const auto i = keys.find(board);
+    return i == std::string_view::npos ? std::string_view{} : sections[i];
+}
+
+// One board substring, e.g. "SBTcRjEi": board tuple, then component tuples.
+bool devtree_add_board(std::string_view board, const BomMap& bom,
+                       std::string& out)
+{
+    const auto section =
+        board.empty() ? std::string_view{} : devtree_section(board[0]);
+    if (section.empty())
+    {
+        std::cerr << std::format("SMBIOS BOM: incorrect encoded board, board "
+                                 "key {}\n",
+                                 board.substr(0, 1));
+        return false;
+    }
+    static const std::map<std::string, std::string> no_entries;
+    const auto it = bom.find(std::string{section});
+    const auto& alternatives = it == bom.end() ? no_entries : it->second;
+    std::map<char, int> count;
+    for (size_t i = 2; i < board.size(); i += 2)
+    {
+        const char category = board[i];
+        const auto code = board.substr(i + 1, 1);
+        if (std::string_view{"GNJXFSC"}.contains(category))
+            continue;
+        if (!std::string_view{"TREAPOH"}.contains(category))
+        {
+            std::cerr << std::format("SMBIOS BOM: incorrect encoded category, "
+                                     "category key {}\n",
+                                     category);
+            return false;
+        }
+        const int n = count[category]++;
+        if (code == "0")
+            continue;
+        const auto key = std::format("{}_{}", devtree_name(category, code), n);
+        const auto alt = alternatives.find(key);
+        if (alt == alternatives.end())
+        {
+            std::cerr << std::format("SMBIOS BOM info: component not defined "
+                                     "in layout/ignored: {}{}\n",
+                                     category, code);
+            continue;
+        }
+        // A2D and pressure entries go out verbatim, the rest word-split.
+        const bool verbatim = category == 'A' || category == 'P';
+        out += (verbatim ? alt->second : join_words(alt->second)) + " ";
+    }
+    return true;
+}
+
+std::string read_trimmed_newlines(const std::string& path)
+{
+    std::ifstream f{path};
+    std::string s{std::istreambuf_iterator<char>{f}, {}};
+    while (!s.empty() && s.back() == '\n')
+        s.pop_back();
+    return s;
+}
+
+} // namespace
+
+namespace detail
+{
+
+std::string devtree_from_bom(std::string_view bom, std::string_view json)
+{
+    const auto map = parse_bom_json(json);
+    if (!map)
+    {
+        std::cerr << "SMBIOS BOM info: invalid devtree JSON\n";
+        return {};
+    }
+    std::vector<std::string_view> parts;
+    for (size_t b = 0;;)
+    {
+        const auto e = bom.find('-', b);
+        parts.push_back(bom.substr(b, e - b));
+        if (e == std::string_view::npos)
+            break;
+        b = e + 1;
+    }
+    if (!parts.empty() && parts.back().empty())
+        parts.pop_back();
+    if (parts.size() < 2 || parts[0].size() != 2 || parts[0][0] != 'V' ||
+        !std::isdigit(static_cast<unsigned char>(parts[0][1])))
+        return {};
+    if (parts[0][1] != '0')
+    {
+        std::cerr << "SMBIOS BOM: unsupported encode version.\n";
+        return {};
+    }
+    std::string out;
+    for (size_t i = 1; i < parts.size(); ++i)
+        if (!devtree_add_board(parts[i], *map, out))
+            return {};
+    return out;
+}
+
+} // namespace detail
+
+void hw_mgmt_boot_start(std::span<const CartridgeBoard> cartridge_boards,
+                        std::span<const std::string_view> decode_cpu_types)
+{
+    constexpr std::string_view cartridges =
+        "24c02 0x50 29 cable_cartridge1_eeprom "
+        "24c02 0x50 30 cable_cartridge2_eeprom "
+        "24c02 0x50 31 cable_cartridge3_eeprom "
+        "24c02 0x50 32 cable_cartridge4_eeprom";
+    const auto config = std::string{hw_mgmt_config_path};
+    const auto devtree_path = config + "/devtree";
+
+    std::error_code ec;
+    std::filesystem::create_directories(config, ec);
+    std::ofstream{config + "/pn", std::ios::app};
+    std::filesystem::remove(devtree_path, ec);
+
+    std::string devtree;
+    const auto hid = read_trimmed_newlines(config + "/hid");
+    std::string json_path = "/etc/hw-management-cfg/devtree.json";
+    if (!std::filesystem::is_regular_file(json_path))
+        json_path = std::format("/etc/hw-management-cfg/{}/devtree.json", hid);
+    if (hid.empty())
+        std::cerr << "SMBIOS BOM info: SKU is not available\n";
+    else if (!std::filesystem::is_regular_file(json_path))
+        std::cerr << std::format("SMBIOS BOM info: no JSON for sku {}: {}\n",
+                                 hid, json_path);
+    else if (!std::ranges::contains(
+                 decode_cpu_types, read_trimmed_newlines(config + "/cpu_type")))
+        std::cerr
+            << "SMBIOS BOM: board strings not decoded for this cpu_type\n";
+    else
+        devtree =
+            detail::devtree_from_bom(read_trimmed_newlines(config + "/bom"),
+                                     read_trimmed_newlines(json_path));
+
+    const auto model = detail::shell_word_join(
+        detail::read_file_range("/sys/firmware/devicetree/base/model", 0, 256));
+    const auto sp = model.find(' ');
+    const auto word =
+        sp == std::string::npos
+            ? std::string{}
+            : model.substr(sp + 1, model.find(' ', sp + 1) - sp - 1);
+    for (const auto& b : cartridge_boards)
+        if (b.model == word && b.hid == hid)
+            devtree += cartridges;
+
+    if (!devtree.empty())
+        std::ofstream{devtree_path, std::ios::trunc} << devtree;
+    std::cerr << "hw-management: init completed\n";
 }
 
 } // namespace nvidia

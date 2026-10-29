@@ -180,4 +180,28 @@ bool i2c_mux_present();
 
 int bind_i3c_controller();
 
+// A (devicetree model word, HID) pair whose cable cartridge EEPROMs are
+// appended to the devtree file.
+struct CartridgeBoard
+{
+    std::string_view model;
+    std::string_view hid;
+};
+
+namespace detail
+{
+
+// The devtree line for a SMBIOS BOM string and a devtree.json BOM map; empty
+// when the string or the map is not usable.
+std::string devtree_from_bom(std::string_view bom, std::string_view json);
+
+} // namespace detail
+
+// The hw-management.sh start phase: the devtree file from the BOM, then the
+// cartridge EEPROMs for the boards listed. Board strings decode only when
+// config/cpu_type is one of decode_cpu_types, reproducing the shipped
+// script: any other value takes its fold path, and busybox has no fold.
+void hw_mgmt_boot_start(std::span<const CartridgeBoard> cartridge_boards,
+                        std::span<const std::string_view> decode_cpu_types);
+
 } // namespace nvidia
