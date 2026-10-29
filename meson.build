@@ -32,6 +32,7 @@ platform_srcs = files(
     'platforms/nvidia/switch_ast2700_bmc.cpp',
     'platforms/nvidia/switch_common.cpp',
     'platforms/nvidia/switch_mcu.cpp',
+    'platforms/nvidia/switch_misc.cpp',
     'platforms/nvidia/switch_preps.cpp',
     'platforms/nvidia/switch_rosalind_bmc.cpp',
     'platforms/nvidia/switch_rtc.cpp',
@@ -156,7 +157,6 @@ subdir('emmc-partition')
 if platform_name.contains('spc6-ast2600')
     subdir('bind-i3c')
 endif
-subdir('switch-misc')
 
 if get_option('tests').allowed()
     switch_gtest_dep = dependency(
@@ -182,6 +182,16 @@ if get_option('tests').allowed()
                     sdbusplus,
                 ],
                 include_directories: ['.', 'platforms', 'platforms/nvidia'],
+            ),
+        )
+        test(
+            'test-switch-misc',
+            executable(
+                'test-switch-misc',
+                'test/test-switch-misc.cpp',
+                'platforms/nvidia/switch_misc.cpp',
+                dependencies: [switch_gtest_dep, sdbusplus],
+                include_directories: ['platforms/nvidia'],
             ),
         )
     endif

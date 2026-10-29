@@ -5,6 +5,7 @@
 #include "i2c.hpp"
 #include "intel/platforms.hpp"
 #include "nvidia/platforms.hpp"
+#include "nvidia/switch_misc.hpp"
 #include "nvidia/switch_preps.hpp"
 #include "nvidia/switch_rtc.hpp"
 #include "utilities.hpp"
@@ -66,6 +67,8 @@ int main(int argc, char** argv)
     preps_sub->add_option("platform_name", platform_name)->required();
     CLI::App* rtc_sub =
         app.add_subcommand("rtc-detect", "Bind the external RTC");
+    CLI::App* slave_sub = app.add_subcommand(
+        "i2c-slave-setup", "Instantiate the recovery EEPROM I2C slave");
     app.require_subcommand();
 
     CLI11_PARSE(app, argc, argv)
@@ -77,6 +80,10 @@ int main(int argc, char** argv)
     if (rtc_sub->parsed())
     {
         return nvidia::switch_rtc_detect();
+    }
+    if (slave_sub->parsed())
+    {
+        return nvidia::switch_misc::i2c_slave_setup();
     }
 
     const auto* it = std::ranges::find_if(
