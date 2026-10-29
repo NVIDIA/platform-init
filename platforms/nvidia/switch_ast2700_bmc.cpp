@@ -346,6 +346,19 @@ static void ast2700_init_bootargs()
                               bootargs, ether_host_addr, ether_dev_addr));
 }
 
+// ARMv7_CPU and ARMv8_CPU as spelled in this machine's helpers copy.
+constexpr std::array<std::string_view, 2> ast2700_decode_cpu_types{
+    "0xC07", "0xD04"};
+
+// Boards whose cable cartridge EEPROMs hw-management.sh start added.
+constexpr std::array<CartridgeBoard, 5> ast2700_cartridge_boards{{
+    {"Juliet", "HI176"},
+    {"Rosalind", "HI180"},
+    {"ROSALIND", "HI180"},
+    {"Spc6", "HI181"},
+    {"Spc6", "HI182"},
+}};
+
 int init_switch_ast2700_bmc()
 {
     using namespace std::chrono_literals;
@@ -461,6 +474,8 @@ int init_switch_ast2700_bmc()
 
         unset_write_protect_on_boot();
     }
+
+    hw_mgmt_boot_start(ast2700_cartridge_boards, ast2700_decode_cpu_types);
 
     sd_notify(0, "READY=1");
 
