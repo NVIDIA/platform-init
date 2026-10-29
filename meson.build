@@ -90,6 +90,7 @@ subdir('emmc-partition')
 if platform_name.contains('spc6-ast2600')
     subdir('bind-i3c')
 endif
+subdir('switch-misc')
 
 if get_option('tests').allowed()
     switch_gtest_dep = dependency(
