@@ -108,12 +108,49 @@ static void preps_write(std::string_view name, std::string_view value)
     std::ofstream{std::format("{}/{}", plat_tmp, name)} << value << '\n';
 }
 
+// cp: a new file gets the source mode under the umask.
+static void preps_copy(std::string_view src, std::string_view dst)
+{
+    const auto from = std::format("/etc/plat_specific/{}", src);
+    const auto to = std::format("{}/{}", plat_tmp, dst);
+    struct stat st{};
+    std::ifstream in{from, std::ios::binary};
+    if (!in || ::stat(from.c_str(), &st) != 0 || !S_ISREG(st.st_mode))
+    {
+        std::cerr << std::format("cp: cannot stat '{}'\n", from);
+        return;
+    }
+    std::ostringstream data;
+    data << in.rdbuf();
+    const int fd = ::open(to.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC,
+                          st.st_mode & 07777);
+    if (fd < 0)
+        return;
+    const auto bytes = data.str();
+    if (::write(fd, bytes.data(), bytes.size()) !=
+        static_cast<ssize_t>(bytes.size()))
+        std::cerr << std::format("cp: write error on '{}'\n", to);
+    ::close(fd);
+}
+
 // ln -sf[n] target link
 static void preps_link(const std::string& target, const std::string& link)
 {
     std::error_code ec;
     fs::remove(link, ec);
     fs::create_symlink(target, link, ec);
+}
+
+// The plat_active tail of the AST2600 and Rosalind copies.
+static void preps_link_sku_dir(const std::string& sku)
+{
+    const auto dir = std::format("{}/{}", plat_configs, sku);
+    if (!sku.empty() && fs::is_directory(dir))
+    {
+        preps_link(dir, std::string{plat_active});
+        std::cerr << std::format("platform configs active: {} -> {}\n", dir,
+                                 plat_active);
+    }
 }
 
 struct Ast2700Sku
@@ -219,6 +256,66 @@ static void preps_ast2700(const std::string& sku)
     }
 }
 
+// get_mgmt_board_revision: config1 once hw-management is up, else the CPLD.
+static bool rosalind_mgmt_board_rev3()
+{
+    std::ifstream f{"/var/run/hw-management/system/config1"};
+    if (f)
+    {
+        std::string v;
+        std::getline(f, v, '\0');
+        while (!v.empty() && v.back() == '\n')
+            v.pop_back();
+        size_t start = v.find_first_not_of(" \t");
+        v = start == std::string::npos ? "" : v.substr(start);
+        while (!v.empty() && (v.back() == ' ' || v.back() == '\t'))
+            v.pop_back();
+        // Bash arithmetic: 0x hex, leading 0 octal, else decimal; a name or
+        // an empty string is 0 and an invalid number is not 3.
+        int base = 10;
+        if (v.starts_with("0x") || v.starts_with("0X"))
+        {
+            base = 16;
+            v = v.substr(2);
+        }
+        else if (v.size() > 1 && v[0] == '0')
+            base = 8;
+        size_t used = 0;
+        try
+        {
+            return (std::stoll(v, &used, base) & 7) == 3 && used == v.size();
+        }
+        catch (const std::exception&)
+        {
+            return false;
+        }
+    }
+    static constexpr std::array<uint8_t, 2> reg{0x25, 0xfb};
+    std::array<uint8_t, 1> val{};
+    return i2c::raw_transfer(5, 0x31, reg, val) == 0 && (val[0] & 7) == 3;
+}
+
+static void preps_rosalind(const std::string& sku)
+{
+    if (sku == "hid185")
+    {
+        preps_copy("blacklist_hi185.json", "blacklist.json");
+        preps_copy("a2d_leakage_config_hi185.json", "a2d_leakage_config.json");
+    }
+    else
+    {
+        if (sku != "hid180")
+            std::cerr << std::format(
+                "No platform specific actions defined for sku {}\n", sku);
+        preps_copy("blacklist.json", "blacklist.json");
+        preps_copy(sku == "hid180" && rosalind_mgmt_board_rev3()
+                       ? "a2d_leakage_config_hi185.json"
+                       : "a2d_leakage_config.json",
+                   "a2d_leakage_config.json");
+    }
+    preps_link_sku_dir(sku);
+}
+
 int switch_plat_preps(std::string_view platform_name)
 {
     const auto sku = preps_get_sku();
@@ -227,6 +324,8 @@ int switch_plat_preps(std::string_view platform_name)
 
     if (platform_name == "nvidia-switch-ast2700-bmc")
         preps_ast2700(sku);
+    else if (platform_name == "nvidia-switch-rosalind-bmc")
+        preps_rosalind(sku);
     else
     {
         std::cerr << std::format("no preps for platform {}\n", platform_name);
