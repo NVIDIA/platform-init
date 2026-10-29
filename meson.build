@@ -79,6 +79,8 @@ emmc_partition_platforms = [
     'nvidia-vr-c2-bmc',
     'nvidia-vr-quark-bmc',
     'nvidia-hgxr-hmc',
+    'nvidia-switch-rosalind-bmc',
+    'nvidia-switch-spc6-ast2600-bmc',
 ]
 subdir('emmc-partition')
 
