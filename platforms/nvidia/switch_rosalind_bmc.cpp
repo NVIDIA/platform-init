@@ -515,6 +515,20 @@ static void rosalind_init_usb_smbus_bridge()
     }
 }
 
+// ARMv7_CPU and ARMv8_CPU as spelled in this machine's helpers copy;
+// 0xd04 never matches the 0xD04 platform-init writes.
+constexpr std::array<std::string_view, 2> rosalind_decode_cpu_types{
+    "0xC07", "0xd04"};
+
+// Boards whose cable cartridge EEPROMs hw-management.sh start added.
+constexpr std::array<CartridgeBoard, 5> rosalind_cartridge_boards{{
+    {"Juliet", "HI176"},
+    {"Rosalind", "HI180"},
+    {"Rosalind", "HI185"},
+    {"Spc6", "HI181"},
+    {"Spc6", "HI182"},
+}};
+
 int init_switch_rosalind_bmc()
 {
     using namespace std::chrono_literals;
@@ -614,6 +628,8 @@ int init_switch_rosalind_bmc()
                          "continuing\n";
         }
     }
+
+    hw_mgmt_boot_start(rosalind_cartridge_boards, rosalind_decode_cpu_types);
 
     sd_notify(0, "READY=1");
 
