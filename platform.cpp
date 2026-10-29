@@ -6,6 +6,7 @@
 #include "intel/platforms.hpp"
 #include "nvidia/platforms.hpp"
 #include "nvidia/switch_preps.hpp"
+#include "nvidia/switch_rtc.hpp"
 #include "utilities.hpp"
 
 #include <fcntl.h>
@@ -63,6 +64,8 @@ int main(int argc, char** argv)
     CLI::App* preps_sub = app.add_subcommand(
         "preps", "Stage the platform-specific files before udev starts");
     preps_sub->add_option("platform_name", platform_name)->required();
+    CLI::App* rtc_sub =
+        app.add_subcommand("rtc-detect", "Bind the external RTC");
     app.require_subcommand();
 
     CLI11_PARSE(app, argc, argv)
@@ -70,6 +73,10 @@ int main(int argc, char** argv)
     if (preps_sub->parsed())
     {
         return nvidia::switch_plat_preps(platform_name);
+    }
+    if (rtc_sub->parsed())
+    {
+        return nvidia::switch_rtc_detect();
     }
 
     const auto* it = std::ranges::find_if(
