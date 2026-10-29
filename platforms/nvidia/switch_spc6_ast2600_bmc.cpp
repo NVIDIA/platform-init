@@ -112,6 +112,19 @@ static std::vector<SysfsGpioPin> spc6_2600_gpio_pins(std::string_view hid,
     return pins;
 }
 
+// ARMv7_CPU and ARMv8_CPU as spelled in this machine's helpers copy;
+// 0xd04 never matches the 0xD04 platform-init writes.
+constexpr std::array<std::string_view, 2> spc6_2600_decode_cpu_types{
+    "0xC07", "0xd04"};
+
+// Boards whose cable cartridge EEPROMs hw-management.sh start added.
+constexpr std::array<CartridgeBoard, 4> spc6_2600_cartridge_boards{{
+    {"Juliet", "HI176"},
+    {"Rosalind", "HI180"},
+    {"Spc6", "HI181"},
+    {"Spc6", "HI182"},
+}};
+
 int init_switch_spc6_ast2600_bmc()
 {
     using namespace std::chrono_literals;
@@ -187,6 +200,8 @@ int init_switch_spc6_ast2600_bmc()
 
         unset_write_protect_on_boot();
     }
+
+    hw_mgmt_boot_start(spc6_2600_cartridge_boards, spc6_2600_decode_cpu_types);
 
     sd_notify(0, "READY=1");
 
