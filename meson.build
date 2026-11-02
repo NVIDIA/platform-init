@@ -26,6 +26,7 @@ platform_srcs = files(
     'platforms/nvidia/gb200.cpp',
     'platforms/nvidia/gb200nvl_bmc.cpp',
     'platforms/nvidia/gb200nvl_hmc.cpp',
+    'platforms/nvidia/hgxr_hmc.cpp',
     'platforms/nvidia/nvidia_platform_utils.cpp',
     'platforms/nvidia/nvl32.cpp',
     'platforms/nvidia/switch_ast2700_bmc.cpp',

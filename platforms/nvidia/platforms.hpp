@@ -10,6 +10,7 @@ int init_gb200_base();
 int init_gb200_with_p2020();
 int init_gb200nvl_bmc();
 int init_gb200nvl_hmc();
+int init_hgxr_hmc();
 int init_nvl32();
 int init_vr_nvl();
 

@@ -27,6 +27,7 @@ constexpr auto init_functions =
          {"nvidia-gb200-with-p2020", nvidia::init_gb200_with_p2020},
          {"nvidia-gb200nvl-bmc", nvidia::init_gb200nvl_bmc},
          {"nvidia-gb200nvl-hmc", nvidia::init_gb200nvl_hmc},
+         {"nvidia-hgxr-hmc", nvidia::init_hgxr_hmc},
          {"nvidia-nvl32", nvidia::init_nvl32},
          {"nvidia-vr-c2-bmc", nvidia::init_vr_c2_bmc},
          {"nvidia-vr-nvl", nvidia::init_vr_nvl},
