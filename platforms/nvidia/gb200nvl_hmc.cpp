@@ -1,22 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2025 NVIDIA
 
-// Platform initialization daemon for gb200nvl-hmc.
-// Replaces hmc_ready.sh from hmc-post-boot-cfg.
-// GPIO line names sourced from nvidia-gb200nvl-hmc-core.dtsi.
-//
-// Sequence:
-//   1. Bind IOX 1-0024 (pca9555)
-//   2. Sync HMC FRU EEPROM to /etc/fru/baseboard.fru.bin
-//   3. Detect secondary modules (write MODULE_PRSNT_ARR + N_MODULES)
-//   4. FPGA power sequence (CPLD reset if needed, release FPGA_RST_L-O)
-//   5. Wait for FPGA0_READY-I and FPGA1_READY-I
-//   6. Enable FPGA backdrive feature
-//   7. 10 s ERoT delay
-//   8. Filesystem check
-//   9. Assert HMC_READY-O via LED sysfs
+// Platform init for gb200nvl-hmc.
 
-#include "platform_utils.hpp"
+#include "compute_hmc_common.hpp"
 #include "utilities.hpp"
 
 #include <systemd/sd-daemon.h>
@@ -34,10 +21,6 @@ using namespace std::chrono_literals;
 namespace nvidia
 {
 
-// Source: hmc_fru_checker.sh
-// Binds the HMC FRU EEPROM at bus 3 addr 0x57 and reads 512 bytes
-// into /etc/fru/baseboard.fru.bin so FruDevice can scan it.
-// Non-fatal: logs failures and continues.
 static void hmc_fru_check()
 {
     constexpr const char* eeprom_sysfs =
@@ -54,7 +37,6 @@ static void hmc_fru_check()
         return;
     }
 
-    // Bind the EEPROM driver if not already bound.
     if (!std::filesystem::exists(eeprom_sysfs))
     {
         std::cerr << "gb200nvl-hmc: fru_check: binding 24c02 at 3-0057\n";
@@ -62,7 +44,6 @@ static void hmc_fru_check()
         std::this_thread::sleep_for(100ms);
     }
 
-    // Read 512 bytes with up to 10 retries.
     constexpr int max_retries = 10;
     std::vector<char> buf(512);
     bool ok = false;
@@ -85,7 +66,6 @@ static void hmc_fru_check()
         return;
     }
 
-    // Compare and write only if different.
     std::vector<char> existing(512, '\0');
     {
         std::ifstream cur{fru_file, std::ios::binary};
@@ -106,12 +86,6 @@ static void hmc_fru_check()
     }
 }
 
-// Source: multi_module_detection.sh discover_modules()
-// Reads GPIO presence pins for each secondary module (active-low: 0 = present).
-// A module is present when both its B2B cable and C-Link cable are asserted.
-// Writes space-separated present indices to MODULE_PRSNT_FILE and count to
-// MODULE_COUNT_FILE so that downstream scripts (fpga1_ready.sh, etc.) can
-// determine the module topology without re-probing GPIOs.
 static void discover_modules()
 {
     // One entry per possible secondary module; extend both arrays together.
@@ -164,15 +138,12 @@ static void discover_modules()
                              present.size());
 }
 
-// Source: fpga_power_sequence.sh execute_hmc_cpld_reset()
-// The CPLD reset GPIO is unnamed in the DTS (gpiochip0 line 123 = P3).
-// Only executed if FPGA0 is not yet ready at init time.
 static void hmc_cpld_reset_if_needed()
 {
     if (gpio::get("FPGA0_READY-I") == 0)
     {
         std::cerr << "gb200nvl-hmc: FPGA not ready — executing CPLD reset\n";
-        // gpiochip0 line 123 = GPIO_P3 (unnamed in DTS)
+        // CPLD reset is GPIO_P3, unnamed in the DTS.
         gpio::set_raw(0, 123, 0);
         std::this_thread::sleep_for(1s);
         gpio::set_raw(0, 123, 1);
@@ -183,30 +154,22 @@ int init_gb200nvl_hmc()
 {
     std::cerr << "gb200nvl-hmc: platform init start\n";
 
-    // Source: bind_expanders.sh
-    // Bind IO expander 1-0024 (pca9555 on I2C2 / bus 1).
     iox_bind(1, 0x24);
 
-    // Source: hmc_fru_checker.sh
     hmc_fru_check();
 
-    // Source: multi_module_detection.sh
     discover_modules();
 
-    // Source: fpga_power_sequence.sh
-    // Perform CPLD reset if FPGA0 is not ready, then arm edge events
-    // before releasing FPGA from reset to avoid a race where the FPGA
-    // asserts ready before we arm the event listener.
     hmc_cpld_reset_if_needed();
 
+    // Armed before FPGA_RST_L-O is released so the edge is not missed.
     gpio::Event fpga0_ready("FPGA0_READY-I", 1);
     gpio::Event fpga1_ready("FPGA1_READY-I", 1);
 
     std::cerr << "gb200nvl-hmc: releasing FPGA from reset\n";
     gpio::set("FPGA_RST_L-O", 1);
 
-    // Source: hmc_ready.sh — enable FPGA backdrive feature.
-    // Added in FPGA version 1v44; ignore errors on older builds.
+    // FPGA backdrive; needs FPGA 1v44+, so errors are ignored.
     {
         try
         {
@@ -221,33 +184,29 @@ int init_gb200nvl_hmc()
         }
     }
 
-    // Wait for primary FPGA (20 s).
     std::cerr << "gb200nvl-hmc: waiting for FPGA0_READY-I\n";
     if (fpga0_ready.wait() != gpio::EventResult::Asserted)
         std::cerr << "gb200nvl-hmc: WARNING: FPGA0_READY-I timeout\n";
     else
         std::cerr << "gb200nvl-hmc: FPGA0 ready\n";
 
-    // Wait for secondary FPGA (20 s).
     std::cerr << "gb200nvl-hmc: waiting for FPGA1_READY-I\n";
     if (fpga1_ready.wait() != gpio::EventResult::Asserted)
         std::cerr << "gb200nvl-hmc: WARNING: FPGA1_READY-I timeout\n";
     else
         std::cerr << "gb200nvl-hmc: FPGA1 ready\n";
 
-    // Source: hmc_ready.sh — delay to allow ERoT to complete background
-    // copy after a firmware update before I2C auth commands are sent.
+    // Let ERoT finish its post-update background copy before I2C auth.
     std::cerr << "gb200nvl-hmc: 10 s ERoT reset delay\n";
     std::this_thread::sleep_for(10s);
 
-    // Source: check_rw_filesystems / check_rofs in hmc_ready.sh
     if (filesystem_check() != EXIT_SUCCESS)
     {
         std::cerr << "gb200nvl-hmc: FATAL: filesystem check failure\n";
         return EXIT_FAILURE;
     }
 
-    // Assert HMC_READY-O via LED sysfs (gpio-leds driver owns M5).
+    // gpio-leds owns HMC_READY-O.
     if (std::ofstream f{"/sys/class/leds/hmc_ready_noled/brightness"}; f)
         f << "1\n";
     else

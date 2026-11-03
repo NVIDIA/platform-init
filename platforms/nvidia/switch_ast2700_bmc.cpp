@@ -1,53 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2025 NVIDIA
 
-// Platform initialization daemon for meta-switch/meta-ast2700 — machines
-// spc6-ast2700-bmc, spc6-ast2700-bmc-9600, spc6-ast2700-bmc-os-loader,
-// spc6-ast2700-bmc-os-loader-9600 and vru-ast2700-bmc.
-// Replaces switch-ast2700-bmc_ready.sh plus that layer's bmc_ready_common.sh
-// and the switch_gpio_set.sh GPIO bring-up it sourced.
-//
-// The five machines differ only in console baud, the bmc-os-loader distro
-// feature and their device trees, i.e. in HID. That divergence is resolved at
-// runtime: the GPIO table comes from /etc/hw-management-bmc-gpio-pins.json,
-// which the /etc -> /run/plat_active symlink tree has already pointed at the
-// active HID's directory, so this file needs no HID awareness to read it.
-//
-// As on every switch platform the lines are exported through legacy
-// /sys/class/gpio and must stay exported for the
-// /var/run/hw-management/system symlink tree, so none of them may be routed
-// through the gpio:: (libgpiod) namespace.
-//
-// Deliberately not ported: the `.bmc-init-done` marker, a Type=notify daemon
-// running once per boot; `hw-management.sh start`, which stays in
-// bmc-boot-complete.service's ExecStartPre; `set_bmc_ready $HIGH`, commented
-// out in the shell; `remove_ipmitools_permissions`, which has no caller; and
-// the VPD EEPROM device creation, done by bmc-early-i2c-init.service here.
+// Platform init for the switch AST2700 BMCs.
 
-#include "platform_utils.hpp"
+#include "i2c.hpp"
+#include "switch_common.hpp"
+#include "switch_mcu.hpp"
 #include "utilities.hpp"
 
 #include <systemd/sd-daemon.h>
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cctype>
+#include <charconv>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <map>
 #include <optional>
+#include <span>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace nvidia
 {
-
-// ── Platform config ───────────────────────────────────────────────────────
-// Source: switch-ast2700-bmc_ready.sh:47-52 and the meta-ast2700
-//         hw-management-helpers.sh:60-64 it sources.
 
 static constexpr std::string_view ast2700_vpd_eeprom =
     "/sys/devices/platform/soc@14000000/soc@14000000:bus@14c0f000/"
@@ -57,61 +38,26 @@ static constexpr size_t ast2700_vpd_hid_offset = 22;
 static constexpr size_t ast2700_vpd_hid_size = 5;
 static constexpr size_t ast2700_vpd_bom_size = 192;
 
-// $BMC_CPU_PWR_ON / $BMC_CPU_PWR_ON_BUT / $BMC_TO_CPU_CTRL. The AST2700 CPLD
-// sits on i2c-14, not i2c-5 as on the AST2600 boards, and the shell spelled
-// the hwmon instance with a glob.
+// The CPLD is on i2c-14 here, not i2c-5 as on the AST2600 boards.
 static constexpr std::string_view ast2700_mlxreg_io_hwmon =
     "/sys/devices/platform/soc@14000000/soc@14000000:bus@14c0f000/"
     "14c0ff00.i2c-bus/i2c-14/14-0031/mlxreg-io/hwmon";
 
-// Source: get_system_hw_bom's HID case list.
 static constexpr std::array<std::string_view, 11> ast2700_bom_hids{
     "HI186", "HI187", "HI188", "HI189", "HI190", "HI191",
     "HI193", "HI194", "HI183", "HI195", "HI197",
 };
 
-// Source: switch-ast2700-bmc_ready.sh:29-35 — each helper no-ops unless its own
-//         JSON config is present, so checking for the config as well as the
-//         script avoids spawning a shell that would immediately return.
-static constexpr std::string_view ast2700_cartridge_script =
-    "/usr/bin/hw-management-bmc-copy-cartridge-data.sh";
 static constexpr std::string_view ast2700_cartridge_config =
     "/etc/hw-mgmt-bmc-copy-cartridge-data.json";
-static constexpr std::string_view ast2700_mcu_script =
-    "/usr/bin/hw-management-mcu.sh";
-static constexpr std::string_view ast2700_mcu_config = "/etc/mcu-devices.json";
-
-// ── GPIO pin config ───────────────────────────────────────────────────────
-// Source: switch_gpio_set.sh:bmc_init_sysfs_gpio
-// The path is fixed: per-HID selection happens inside the /etc ->
-// /run/plat_active symlink tree that bmc-plat-specific-preps.service builds
-// before udev, so this reader needs no HID awareness.
-//
-// Schema:
-//   { "description": <string>,
-//     "bmc_stby_ready": { "chip": <string>, "offset": <int> },
-//     "pins": [ { "chip": <string>,
-//                 "offset": <int>,
-//                 "direction": "in" | "out" | "preserve",
-//                 "value": <int, optional>,
-//                 "symlink": <string, optional> } ] }
-// where chip is "aspeed", "expander24" or "i2c:<bus>-<addr>".
-//
-// The only pins JSON in the tree, so the type and reader stay local: moving
-// them to platform_utils.hpp would put nlohmann/json.hpp on every platform's
-// compile.
 
 struct GpioPinConfig
 {
-    // /sys/class/gpio/gpio<N>/value for the standby-ready line, empty when the
-    // config names none. Feed it to wait_sysfs_value().
     std::string bmc_stby_ready;
     std::vector<SysfsGpioPin> pins;
 };
 
-// nullopt means "no usable config" — the caller then falls back to its
-// built-in pin table, the way bmc_init_sysfs_gpio() calls
-// bmc_init_sysfs_gpio_hardcoded().
+// The path is per-HID via the /etc -> /run/plat_active symlink tree.
 static std::optional<GpioPinConfig> load_gpio_pin_config(
     std::string_view path = "/etc/hw-management-bmc-gpio-pins.json")
 {
@@ -140,8 +86,6 @@ static std::optional<GpioPinConfig> load_gpio_pin_config(
             return std::nullopt;
         }
 
-        // Each logical chip id costs a sysfs scan to resolve, and a config
-        // names only two or three of them across dozens of pins.
         std::map<std::string, std::optional<int>> bases;
         const auto base_for = [&bases](const std::string& chip) {
             const auto [it, inserted] = bases.try_emplace(chip, std::nullopt);
@@ -198,7 +142,7 @@ static std::optional<GpioPinConfig> load_gpio_pin_config(
             }
             const auto base = base_for(chip);
             if (!base)
-                continue; // chip resolution already reported the failure
+                continue;
 
             SysfsGpioPin entry{};
             entry.number = *base + offset;
@@ -211,8 +155,6 @@ static std::optional<GpioPinConfig> load_gpio_pin_config(
                 entry.direction = SysfsGpioDir::Preserve;
             else
             {
-                // As in the shell: the line is still exported and symlinked,
-                // only its direction and value are left alone.
                 std::cerr << std::format("load_gpio_pin_config: pins[{}] has "
                                          "unsupported direction: {}\n",
                                          index, direction);
@@ -236,10 +178,7 @@ static std::optional<GpioPinConfig> load_gpio_pin_config(
     }
 }
 
-// Source: bmc_init_sysfs_gpio_hardcoded (switch-ast2700-bmc_ready.sh:122-249)
-// The built-in table used when the active platform ships no pins JSON
-// (Salamandra and Chameleon today). Each bank is guarded exactly as the
-// shell's `if [ -n "$..._BASE" ]` blocks are.
+// For platforms that ship no pins JSON.
 static GpioPinConfig ast2700_gpio_pins_hardcoded()
 {
     GpioPinConfig config;
@@ -258,15 +197,13 @@ static GpioPinConfig ast2700_gpio_pins_hardcoded()
             {e + 3, SysfsGpioDir::Out, 1, "GP_BMC_PWR_CYCLE_3V3_MASK_L"});
         config.pins.push_back({e + 6, SysfsGpioDir::In, std::nullopt,
                                "SE_SOC_EROT_BOOT_COMPLETE"});
-        // Direction only: write protect keeps its reset level until
-        // unset_write_protect_on_boot() below decides whether to drop it.
+        // Direction only; unset_write_protect_on_boot() sets the level.
         config.pins.push_back(
             {e + 7, SysfsGpioDir::Out, std::nullopt, "GP_BMC_WP_CTRL_GPIO_L"});
-        // BIOS flash recovery: 0 on init to give JTAG access to the flashes,
-        // 1 only when recovery is needed.
+        // 0 gives JTAG access to the BIOS flashes; 1 only for recovery.
         config.pins.push_back(
             {e + 8, SysfsGpioDir::Out, 0, "GP_BMC_REC_SPI_MUX1_SEL"});
-        // Offset 10, GPIO_PHY_RST_L, is driven from the DTS — not exported.
+        // Offset 10 (PHY reset) is driven from the DTS.
         config.pins.push_back(
             {e + 11, SysfsGpioDir::Out, 1, "GP_JTAG_BMC_CPLD_BURN_EN_L"});
         config.pins.push_back(
@@ -282,7 +219,6 @@ static GpioPinConfig ast2700_gpio_pins_hardcoded()
                      "base (ngpio=24)\n";
     }
 
-    // AST2700 SoC bank.
     if (const auto base = sysfs_gpiochip_base_aspeed(); base)
     {
         std::cerr << std::format("switch-ast2700-bmc: Aspeed GPIO base {}\n",
@@ -292,8 +228,7 @@ static GpioPinConfig ast2700_gpio_pins_hardcoded()
             {a + 34, SysfsGpioDir::In, std::nullopt, "GP_STBY_PG"}); // GPIOE2
         config.pins.push_back(
             {a + 40, SysfsGpioDir::Out, 1, "GP_BMC_FRU_WP"});        // GPIOF0
-        // GPIOS1: exported and symlinked, but neither direction nor value is
-        // configured — driving it can power-cycle the BMC immediately.
+        // GPIOS1: never driven; driving it can power-cycle the BMC.
         config.pins.push_back({a + 145, SysfsGpioDir::Preserve, std::nullopt,
                                "GP_BMC_PWR_CYCLE_BMC"});
 
@@ -308,16 +243,258 @@ static GpioPinConfig ast2700_gpio_pins_hardcoded()
     return config;
 }
 
-// ── Hardware ID discovery ─────────────────────────────────────────────────
+// Source: hw-management-bmc-copy-cartridge-data.sh. Copies the primary
+// cartridge FRU's rack/topology/tray/slot ids into the switch-board CPLD.
+struct CartridgeConfig
+{
+    std::string access;
+    unsigned bus = 0;
+    uint8_t addr = 0;
+    unsigned swb_bus = 0;
+    uint8_t swb_addr = 0;
+    unsigned msb = 0;
+    unsigned lsb = 0;
+    unsigned rack_off = 0;
+    unsigned topo_off = 0;
+    unsigned tray_off = 0;
+    unsigned slot_off = 0;
+    size_t rack_size = 13;
+};
 
-// TEMPORARY HID197 bring-up fallback.
-//
-// Source: get_temporary_dt_hw_id_fallback — `find /proc/device-tree -name
-//         "nvsw*" | xargs basename | grep -m1 -oE 'hid[0-9]+'`.
-// Until the HID197 EEPROM layout is verified on hardware the device-tree HID is
-// authoritative when the VPD value is missing, malformed, or disagrees with the
-// board the kernel selected. Remove this function and its caller below once the
-// production HID197 VPD layout has been confirmed.
+// Quoted "0xNN" or decimal; anything else is 0, as in the shell.
+static unsigned cartridge_json_int(const nlohmann::json& doc,
+                                   const std::string& key)
+{
+    const auto it = doc.find(key);
+    if (it == doc.end() || !it->is_string())
+        return 0;
+    const auto& v = it->get_ref<const std::string&>();
+    const auto b = v.find_first_not_of(" \t");
+    if (b == std::string::npos)
+        return 0;
+    const auto t = v.substr(b, v.find_last_not_of(" \t") + 1 - b);
+    const bool hex = t.starts_with("0x") || t.starts_with("0X");
+    unsigned out = 0;
+    std::from_chars(t.data() + (hex ? 2 : 0), t.data() + t.size(), out,
+                    hex ? 16 : 10);
+    return out;
+}
+
+static std::optional<CartridgeConfig> load_cartridge_config(
+    const std::string& path)
+{
+    std::ifstream f{path};
+    const auto doc = nlohmann::json::parse(f, nullptr, false);
+    if (doc.is_discarded() || !doc.is_object())
+    {
+        std::cerr << std::format("cartridge: invalid JSON: {}\n", path);
+        return std::nullopt;
+    }
+    const auto num = [&doc](const char* key) {
+        const auto it = doc.find(key);
+        return it != doc.end() && it->is_number_unsigned()
+                   ? std::optional{it->get<unsigned>()}
+                   : std::nullopt;
+    };
+    CartridgeConfig c;
+    c.access = doc.value("PhysicalAccess", std::string{});
+    std::ranges::transform(c.access, c.access.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::toupper(ch));
+    });
+    c.bus = num("PrimaryCartridgeI2cBus")
+                .value_or(num("Cartridge1I2cBus").value_or(0));
+    c.addr =
+        static_cast<uint8_t>(cartridge_json_int(doc, "CartridgeI2cAddress"));
+    const auto plsb = doc.value("PrimaryCartridgeSwbLsbOffset", std::string{});
+    c.lsb =
+        cartridge_json_int(doc, plsb.empty() ? "SwbCartridge1LsbOffset"
+                                             : "PrimaryCartridgeSwbLsbOffset");
+    c.swb_bus = num("SwbI2cBus").value_or(0);
+    c.swb_addr = static_cast<uint8_t>(cartridge_json_int(doc, "SwbI2cAddress"));
+    c.msb = cartridge_json_int(doc, "SwbCartridgeMsbOffset");
+    c.rack_off = cartridge_json_int(doc, "SwbCartridgeRackIdOffset");
+    c.topo_off = cartridge_json_int(doc, "SwbTopologyIdOffset");
+    c.tray_off = cartridge_json_int(doc, "SwbSwitchTrayIdOffset");
+    c.slot_off = cartridge_json_int(doc, "SwbSlotIndexOffset");
+    if (const auto sz = num("CartridgeRackIdSize"); sz && *sz >= 1 && *sz <= 64)
+        c.rack_size = *sz;
+    return c;
+}
+
+// One-byte EEPROM register reads; the shell's i2ctransfer took only
+// byte-sized offsets.
+static bool cartridge_read(unsigned bus, uint8_t addr, unsigned off,
+                           std::span<uint8_t> out)
+{
+    const std::array<uint8_t, 1> reg{static_cast<uint8_t>(off)};
+    return off <= 0xff && i2c::raw_transfer(bus, addr, reg, out) == 0;
+}
+
+static bool cpld_read(const CartridgeConfig& c, unsigned off,
+                      std::span<uint8_t> out)
+{
+    const std::array<uint8_t, 2> reg{static_cast<uint8_t>(c.msb),
+                                     static_cast<uint8_t>(off)};
+    return off <= 0xff &&
+           i2c::raw_transfer(c.swb_bus, c.swb_addr, reg, out) == 0;
+}
+
+// Write then read back; a failed write shows up as a readback mismatch.
+static bool cpld_push(const CartridgeConfig& c, unsigned off, uint8_t val,
+                      std::string_view what)
+{
+    const std::array<uint8_t, 3> wr{static_cast<uint8_t>(c.msb),
+                                    static_cast<uint8_t>(off), val};
+    if (off <= 0xff)
+        i2c::raw_transfer(c.swb_bus, c.swb_addr, wr, {});
+    std::array<uint8_t, 1> rb{};
+    if (cpld_read(c, off, rb) && rb[0] == val)
+        return true;
+    std::cerr << std::format("Cartridge: bus {} address {}: {} not pushed\n",
+                             c.bus, c.addr, what);
+    return false;
+}
+
+static void log_cpld_cartridge_data(const CartridgeConfig& c)
+{
+    std::vector<uint8_t> rack(c.rack_size);
+    std::array<uint8_t, 1> topo{}, tray{}, slot{};
+    if (!cpld_read(c, c.lsb + c.rack_off, rack) ||
+        !cpld_read(c, c.lsb + c.topo_off, topo) ||
+        !cpld_read(c, c.lsb + c.tray_off, tray) ||
+        !cpld_read(c, c.lsb + c.slot_off, slot))
+    {
+        std::cerr << std::format("Cartridge CPLD dump: read failed (LSB={})\n",
+                                 c.lsb);
+        return;
+    }
+    std::string raw, ascii;
+    bool end = false;
+    for (const auto b : rack)
+    {
+        raw += std::format("{}0x{:02x}", raw.empty() ? "" : " ", b);
+        end = end || b == 0;
+        if (!end)
+            ascii += static_cast<char>(b);
+    }
+    const auto* topo_name = topo[0] == 0x80   ? "18x1RU"
+                            : topo[0] == 0x81 ? "9x2RU"
+                            : topo[0] == 0    ? "Loopback/empty"
+                                              : "unknown";
+    std::cerr << std::format(
+        "Cartridge CPLD dump (LSB=0x{:02x}): rack_id raw=[{}] ascii=[{}] "
+        "topology_id=0x{:02x} ({}) tray_id=0x{:02x} ({}) slot_id=0x{:02x} "
+        "({})\n",
+        c.lsb, raw, ascii.empty() ? "<empty>" : ascii, topo[0], topo_name,
+        tray[0], tray[0], slot[0], slot[0]);
+}
+
+static bool update_cartridge_data(const CartridgeConfig& c)
+{
+    std::array<uint8_t, 8> hdr{};
+    if (i2c::raw_transfer(c.bus, c.addr, {}, std::span{hdr}.first(1)) != 0)
+    {
+        std::cerr << std::format("No cartridge EEPROM found at bus {} address "
+                                 "{}\n",
+                                 c.bus, c.addr);
+        return false;
+    }
+
+    // Board serial follows the board part number field.
+    std::array<uint8_t, 1> b{};
+    if (!cartridge_read(c.bus, c.addr, 3, b))
+        return false;
+    const unsigned pn_off = b[0] * 8U + 13;
+    if (!cartridge_read(c.bus, c.addr, pn_off, b))
+        return false;
+    const unsigned sn_off = pn_off + (b[0] & 0x3fU) + 2;
+
+    // Chassis custom info: skip part number and serial fields.
+    if (!cartridge_read(c.bus, c.addr, 0, hdr))
+        return false;
+    unsigned off = hdr[2] * 8U;
+    std::array<uint8_t, 3> chdr{};
+    if (!cartridge_read(c.bus, c.addr, off, chdr))
+        return false;
+    off += 3;
+    for (int i = 0; i < 3; ++i)
+    {
+        if (!cartridge_read(c.bus, c.addr, off, b))
+            return false;
+        off += i < 2 ? 1 + (b[0] & 0x3fU) : 1;
+    }
+
+    std::vector<uint8_t> rack(c.rack_size);
+    std::array<uint8_t, 1> topo{}, tray{}, slot{};
+    if (!cartridge_read(c.bus, c.addr, sn_off, rack) ||
+        !cartridge_read(c.bus, c.addr, off + 4, topo) ||
+        !cartridge_read(c.bus, c.addr, off + 3, tray) ||
+        !cartridge_read(c.bus, c.addr, off + 2, slot))
+    {
+        std::cerr << std::format("Cartridge: EEPROM read failed (bus={})\n",
+                                 c.bus);
+        return false;
+    }
+
+    if (!cpld_push(c, c.lsb + c.tray_off, tray[0], "Switch tray Id") ||
+        !cpld_push(c, c.lsb + c.slot_off, slot[0], "Slot index") ||
+        !cpld_push(c, c.lsb + c.topo_off, topo[0], "Topology id"))
+        return false;
+
+    // Legacy fixed-width CPLD blocks: pad the transaction to 16 bytes.
+    const unsigned rack_reg = c.lsb + c.rack_off;
+    std::vector<uint8_t> wr{static_cast<uint8_t>(c.msb),
+                            static_cast<uint8_t>(rack_reg)};
+    wr.insert(wr.end(), rack.begin(), rack.end());
+    wr.resize(std::max<size_t>(wr.size(), 16), 0);
+    std::vector<uint8_t> rb(c.rack_size);
+    if (rack_reg > 0xff ||
+        i2c::raw_transfer(c.swb_bus, c.swb_addr, wr, {}) != 0 ||
+        !cpld_read(c, rack_reg, rb) || rb != rack)
+    {
+        std::cerr << std::format("Cartridge: bus {} address {}: Rack Id not "
+                                 "pushed\n",
+                                 c.bus, c.addr);
+        return false;
+    }
+
+    std::cerr << std::format("Cartridge: bus {} EEPROM data pushed to CPLD LSB "
+                             "0x{:02x}\n",
+                             c.bus, c.lsb);
+    log_cpld_cartridge_data(c);
+    return true;
+}
+
+static void ast2700_copy_cartridge_data(const std::string& path)
+{
+    using namespace std::chrono_literals;
+    constexpr int retries = 5;
+
+    const auto c = load_cartridge_config(path);
+    if (!c)
+        return;
+    if (c->access != "I2C" && !c->access.empty())
+    {
+        std::cerr << std::format("Cartridge data copy: PhysicalAccess={} not "
+                                 "supported, skipping\n",
+                                 c->access);
+        return;
+    }
+    for (int attempt = 1; attempt <= retries; ++attempt)
+    {
+        if (update_cartridge_data(*c))
+            return;
+        std::cerr << std::format("Cartridge CPLD copy failed, attempt {}/{}\n",
+                                 attempt, retries);
+        if (attempt < retries)
+            std::this_thread::sleep_for(2s);
+    }
+    std::cerr << std::format("[ERROR] Cartridge CPLD copy failed after {} "
+                             "attempts\n",
+                             retries);
+}
+
+// TEMPORARY HID197 bring-up fallback; remove once its VPD layout is confirmed.
 static std::string ast2700_dt_hw_id_fallback()
 {
     std::error_code ec;
@@ -361,13 +538,7 @@ struct Ast2700HwId
     bool from_dt_fallback = false;
 };
 
-// Source: get_system_hw_id (switch-ast2700-bmc_ready.sh:284-311)
-// Returns the HID, or an empty value when neither the VPD nor the device tree
-// yields a valid one. The shell returned 1 there but no caller checked it, so
-// init carries on with no hid file and get_system_hw_bom writes no bom either.
-// from_dt_fallback is set when the temporary HID197 device-tree path supplied
-// the value; callers must not treat VPD Board Extra (rev_id) as authoritative
-// on that path until the HID197 EEPROM layout is confirmed.
+// On the HID197 DT fallback, VPD rev_id is not authoritative.
 static Ast2700HwId ast2700_read_hw_id()
 {
     const auto is_valid = [](std::string_view hid) {
@@ -380,8 +551,7 @@ static Ast2700HwId ast2700_read_hw_id()
     auto vpd = vpd_read_field(ast2700_vpd_eeprom, ast2700_vpd_hid_offset,
                               ast2700_vpd_hid_size);
 
-    // TEMPORARY HID197 bring-up fallback. Remove this once the production
-    // HID197 VPD layout has been confirmed.
+    // TEMPORARY HID197 bring-up fallback.
     const auto dt_hw_id = ast2700_dt_hw_id_fallback();
     if (!is_valid(vpd) || (!dt_hw_id.empty() && vpd != dt_hw_id))
     {
@@ -405,12 +575,7 @@ static Ast2700HwId ast2700_read_hw_id()
     return {.value = std::move(vpd)};
 }
 
-// ── Platform-local steps ──────────────────────────────────────────────────
-
-// Source: bmc_ready_common.sh:1-14 bmc_init_bootargs
-// Unlike the AST2600 layers' copy this one does not rewrite the console
-// setting; it only appends the g_ether MAC pair, and only once. A different
-// function, so it stays local rather than using the shared bmc_init_bootargs().
+// Unlike bmc_init_bootargs(), leaves the console setting alone.
 static void ast2700_init_bootargs()
 {
     static constexpr std::string_view ether_host_addr = "46:44:8a:c8:7f:bf";
@@ -433,7 +598,18 @@ static void ast2700_init_bootargs()
                               bootargs, ether_host_addr, ether_dev_addr));
 }
 
-// ── Platform init ─────────────────────────────────────────────────────────
+// ARMv7_CPU and ARMv8_CPU as spelled in this machine's helpers copy.
+constexpr std::array<std::string_view, 2> ast2700_decode_cpu_types{
+    "0xC07", "0xD04"};
+
+// Boards whose cable cartridge EEPROMs hw-management.sh start added.
+constexpr std::array<CartridgeBoard, 5> ast2700_cartridge_boards{{
+    {"Juliet", "HI176"},
+    {"Rosalind", "HI180"},
+    {"ROSALIND", "HI180"},
+    {"Spc6", "HI181"},
+    {"Spc6", "HI182"},
+}};
 
 int init_switch_ast2700_bmc()
 {
@@ -441,17 +617,11 @@ int init_switch_ast2700_bmc()
 
     std::cerr << "switch-ast2700-bmc: platform init start\n";
 
-    // Source: switch-ast2700-bmc_ready.sh:482 `run_hook pre`
     run_nos_hook("pre");
 
-    // The block below is bmc_init_main, whose `trap bmc_init_exit_handler
-    // EXIT` ran the post hook on every path out of the subshell.
     {
         NosHookGuard nos_hook;
 
-        // Source: switch_gpio_set.sh:bmc_init_sysfs_gpio, which falls back to
-        //         the caller-provided bmc_init_sysfs_gpio_hardcoded when the
-        //         active platform ships no pins JSON.
         auto gpio_config = load_gpio_pin_config();
         if (!gpio_config)
         {
@@ -461,8 +631,6 @@ int init_switch_ast2700_bmc()
         }
         sysfs_gpio_apply(gpio_config->pins);
 
-        // Source: wait_platform_drv — hw-management publishes its runtime tree
-        //         from a udev event, so it may not exist yet.
         hw_mgmt_wait_system_tree("switch-ast2700-bmc");
 
         hw_mgmt_link_gpio(gpio_config->pins);
@@ -471,14 +639,10 @@ int init_switch_ast2700_bmc()
 
         ast2700_init_bootargs();
 
-        // Source: bmc_init_main:494-501
         const bool cpu_off = hw_mgmt_take_i2c_when_cpu_off(
             ast2700_mlxreg_io_hwmon, "switch-ast2700-bmc");
 
-        // ── bmc_ready_sequence (switch-ast2700-bmc_ready.sh:397-450) ───────
-
-        // Source: `wait_bmc_standby_ready 10 1`. The shell discarded the
-        //         result, so a timeout is not fatal.
+        // A timeout here is not fatal.
         if (!gpio_config->bmc_stby_ready.empty())
         {
             wait_sysfs_value(gpio_config->bmc_stby_ready, "1", 10, 1000ms);
@@ -495,9 +659,6 @@ int init_switch_ast2700_bmc()
             hw_mgmt_write_config("hid", hw_id.value);
         }
 
-        // Source: get_system_hw_bom. The record offset is found by scanning
-        //         the first 128 bytes for a `V<digit>-` marker, which is what
-        //         vpd_read_bom() does when no offset is given.
         if (const auto bom =
                 vpd_read_bom(ast2700_vpd_eeprom, hw_id.value, ast2700_bom_hids,
                              std::nullopt, ast2700_vpd_bom_size);
@@ -509,10 +670,6 @@ int init_switch_ast2700_bmc()
             hw_mgmt_write_config("bom", bom);
         }
 
-        // Source: get_system_hw_rev. Writes config/rev_id from SYS_FRU Board
-        //         Extra (the two extras immediately before HID, e.g. 18a1).
-        // Skip when HID came from the temporary HID197 device-tree fallback:
-        // the VPD extras layout is unconfirmed on that path.
         if (hw_id.from_dt_fallback)
         {
             std::cerr << "switch-ast2700-bmc: skipping rev_id; HID came from "
@@ -524,35 +681,14 @@ int init_switch_ast2700_bmc()
                                 ast2700_bom_hids, "switch-ast2700-bmc");
         }
 
-        // Source: bmc_ready_sequence:411-420. Copies rack id, topology id,
-        //         switch tray id and slot index from the cartridge FRU EEPROM
-        //         into the switch-board CPLD. Only while the host CPU is not
-        //         driving the I2C tree, only where the config ships. Non-fatal.
-        if (cpu_off && std::filesystem::exists(ast2700_cartridge_script) &&
-            std::filesystem::exists(ast2700_cartridge_config))
+        // Only while the host CPU is not driving the I2C tree.
+        if (cpu_off && std::filesystem::exists(ast2700_cartridge_config))
         {
-            shell_out(
-                std::format("bash -c '. {} && hw_mgmt_bmc_copy_cartridge_data'",
-                            ast2700_cartridge_script),
-                "switch-ast2700-bmc");
+            ast2700_copy_cartridge_data(std::string{ast2700_cartridge_config});
         }
 
-        // Source: bmc_ready_sequence:422-427.
-        // TODO(HID197 bring-up): add a platform mcu-devices.json only after
-        // reset/recovery/ready GPIO mapping and polarity are verified. Until
-        // then the absent config is intentionally a no-op.
-        if (std::filesystem::exists(ast2700_mcu_script) &&
-            std::filesystem::exists(ast2700_mcu_config))
-        {
-            shell_out(std::format("bash -c '. {} && hw_mgmt_mcu_reset'",
-                                  ast2700_mcu_script),
-                      "switch-ast2700-bmc");
-        }
+        hw_mgmt_mcu_reset();
 
-        // Source: bmc_ready_sequence:429-438. `a2d_leakage_config.sh` is 1261
-        //         lines of JSON-driven leak-detector config, kept in shell.
-        //         Skip it when detectors come from the MCU over NSM or when
-        //         the platform has no leak detectors.
         const auto leakSource = platform_feature("LEAK_DETECTION_SOURCE");
         if (leakSource == "mcu")
         {
@@ -569,9 +705,7 @@ int init_switch_ast2700_bmc()
             shell_out("a2d_leakage_config.sh", "switch-ast2700-bmc");
         }
 
-        // Source: check_rw_filesystems + check_rofs. The AST2700 machines are
-        //         the only switch machines that set emmc-rwfs-env, so this is
-        //         the eMMC variant, and the result is fatal.
+        // eMMC-backed, unlike the other switch machines.
         if (filesystem_check() != EXIT_SUCCESS)
         {
             std::cerr << "switch-ast2700-bmc: FATAL: filesystem check "
@@ -579,20 +713,15 @@ int init_switch_ast2700_bmc()
             return EXIT_FAILURE;
         }
 
-        // Source: bmc_init_main:512. The action comes from WRITE_PROTECT_MODE
-        //         in /etc/platform_features.conf, which is per-HID data.
         unset_write_protect_on_boot();
-    } // NosHookGuard: the post hook runs here, where the subshell exited
+    }
+
+    hw_mgmt_boot_start(ast2700_cartridge_boards, ast2700_decode_cpu_types);
 
     sd_notify(0, "READY=1");
 
-    // A no-op on switch — nothing in this file goes through gpio::set() — but
-    // it keeps a future libgpiod line from leaking past init.
     gpio::release_all();
 
-    // Source: `phosphor_log "bmc_ready.sh completed"` plus the separate
-    //         log_event_console call, consolidated into one emitter over the
-    //         D-Bus log entry, the journal and the console.
     phosphor_log_all("platform init completed");
 
     pause();
