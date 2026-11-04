@@ -9,7 +9,7 @@ Wants=time-set.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/libexec/platform early-init @PLATFORM_NAME@
+ExecStart=/usr/libexec/platform init @PLATFORM_NAME@-early
 SyslogIdentifier=platform-init
 TimeoutStartSec=300
 

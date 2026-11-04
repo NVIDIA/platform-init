@@ -7,7 +7,7 @@ Before=systemd-udevd.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/libexec/platform preps @PLATFORM_NAME@
+ExecStart=/usr/libexec/platform init @PLATFORM_NAME@-preps
 SyslogIdentifier=nvidia_plat_specific_preps
 RemainAfterExit=no
 
