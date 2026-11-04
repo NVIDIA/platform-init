@@ -86,6 +86,24 @@ if get_option('tests').allowed()
                 ],
             ),
         )
+        test(
+            'test-standby-wait',
+            executable(
+                'test-standby-wait',
+                'test/test-standby-wait.cpp',
+                'platforms/nvidia/compute_hmc_common.cpp',
+                'platforms/nvidia/nvidia_platform_utils.cpp',
+                util_srcs,
+                include_directories: ['.', 'platforms'],
+                dependencies: [
+                    rtc_gtest,
+                    gpiodcxx_dep,
+                    i2c_dep,
+                    libsystemd_dep,
+                    sdbusplus,
+                ],
+            ),
+        )
     endif
 endif
 

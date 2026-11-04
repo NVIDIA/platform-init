@@ -26,6 +26,10 @@ void new_device(unsigned int bus, unsigned int address,
 // Returns 0, or a positive errno.
 int raw_transfer(unsigned int bus, uint8_t address,
                  std::span<const uint8_t> write, std::span<uint8_t> read);
+// Source: i2cdetect -y <bus> <addr> <addr>  (SMBus quick write; an address
+// claimed by a driver, "UU", counts as present)
+bool probe(unsigned int bus, uint8_t address);
+
 std::expected<void, std::error_code> bind_device(
     unsigned int bus, unsigned int address, std::string_view driver_name);
 

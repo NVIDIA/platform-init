@@ -35,6 +35,30 @@ void hmc_set_initial_gpio_out(std::string_view tag,
 void release_hpm_mcu_reset(std::string_view tag,
                            std::span<const char* const> enable_lines);
 
+// A board whose IO expanders appear on its bus once standby power is up.
+struct StandbyBoard
+{
+    unsigned bus;
+    std::array<uint8_t, 2> iox;
+    unsigned attempts;
+    std::optional<uint8_t> fru{}; // HPM FRU to re-bind, if the board has one
+};
+
+struct StandbyConfig
+{
+    StandbyBoard brd0;
+    StandbyBoard brd1;
+    std::chrono::milliseconds poll{1000};
+};
+
+// As the initramfs standby_power_wait.sh did: polls each board's first IO
+// expander, re-binds its devices once found, and leaves
+// run/standby_power_failure (BRD0 timed out) or run/brd1_not_present under
+// <root>. Boot continues either way.
+void wait_for_standby_power(std::string_view tag, const StandbyConfig& cfg,
+                            const std::filesystem::path& root = "/",
+                            bool (*present)(unsigned, uint8_t) = i2c::probe);
+
 bool check_hmc_filesystems();
 
 // Asserts HMC_READY through <ready_pin>, then reports ready to systemd.

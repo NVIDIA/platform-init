@@ -34,6 +34,11 @@ static constexpr std::array<compute::GpioOut, 13> initial_outputs{{
 static constexpr std::array<const char*, 2> mcu_enable_lines{
     "BRD0_HMC_TO_MCU_I2C_EN-O", "BRD1_HMC_TO_MCU_I2C_EN-O"};
 
+// BRD0 bus 1 must come up within 120 s; BRD1 bus 7 is optional.
+static constexpr compute::StandbyConfig standby{
+    .brd0 = {.bus = 1, .iox = {0x20, 0x21}, .attempts = 120, .fru = 0x50},
+    .brd1 = {.bus = 7, .iox = {0x20, 0x21}, .attempts = 5, .fru = 0x50}};
+
 static constexpr auto hmc_ready_pin =
     "/sys/class/leds/hmc_ready_noled/brightness";
 
@@ -41,6 +46,9 @@ int init_vr_nvl_hmc()
 {
     static constexpr auto tag = "vr-nvl-hmc";
     std::cerr << "vr-nvl-hmc: platform init start\n";
+
+    // The GPIO outputs below live on the IO expanders this binds.
+    compute::wait_for_standby_power(tag, standby);
 
     compute::create_state_dir();
 

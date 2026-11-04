@@ -52,6 +52,65 @@ void release_hpm_mcu_reset(std::string_view tag,
     }
 }
 
+// Binds a device the kernel gave up on before standby power was up. A
+// bound one is left alone: re-binding would pull its gpiochip from under
+// services already using its lines.
+static void rebind(std::string_view tag, const std::filesystem::path& root,
+                   unsigned bus, uint8_t addr, std::string_view driver)
+{
+    const auto dev = std::format("{}-{:04x}", bus, addr);
+    const auto dir = root / "sys/bus/i2c/drivers" / driver;
+    if (std::filesystem::exists(dir / dev))
+        return;
+    if (const int err = detail::sysfs_write(dir / "bind", dev); err != 0)
+        std::cerr << std::format("{}: WARNING: failed to bind {} to {}: {}\n",
+                                 tag, dev, driver, std::strerror(err));
+    else
+        std::cerr << std::format("{}: bound {} to {}\n", tag, dev, driver);
+}
+
+static bool wait_board(std::string_view tag, std::string_view name,
+                       const StandbyBoard& board, const StandbyConfig& cfg,
+                       const std::filesystem::path& root,
+                       bool (*present)(unsigned, uint8_t))
+{
+    std::cerr << std::format("{}: waiting for {} (bus {}, {} attempts)\n", tag,
+                             name, board.bus, board.attempts);
+    for (unsigned attempt = 1; attempt <= board.attempts; ++attempt)
+    {
+        if (present(board.bus, board.iox[0]))
+        {
+            std::cerr << std::format("{}: {} detected after {} attempts\n", tag,
+                                     name, attempt);
+            for (const uint8_t addr : board.iox)
+                rebind(tag, root, board.bus, addr, "pca953x");
+            if (board.fru)
+                rebind(tag, root, board.bus, *board.fru, "at24");
+            return true;
+        }
+        std::this_thread::sleep_for(cfg.poll);
+    }
+    return false;
+}
+
+void wait_for_standby_power(std::string_view tag, const StandbyConfig& cfg,
+                            const std::filesystem::path& root,
+                            bool (*present)(unsigned, uint8_t))
+{
+    if (!wait_board(tag, "BRD0", cfg.brd0, cfg, root, present))
+    {
+        std::cerr << std::format(
+            "{}: FAILURE: BRD0 not detected, standby power failure\n", tag);
+        std::ofstream marker{root / "run/standby_power_failure"};
+        return;
+    }
+    if (!wait_board(tag, "BRD1", cfg.brd1, cfg, root, present))
+    {
+        std::cerr << std::format("{}: BRD1 not present\n", tag);
+        std::ofstream marker{root / "run/brd1_not_present"};
+    }
+}
+
 bool check_hmc_filesystems()
 {
     if (!check_rw_filesystems())
