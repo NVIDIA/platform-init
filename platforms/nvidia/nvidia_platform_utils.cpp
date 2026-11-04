@@ -5,6 +5,7 @@
 
 #include <linux/i2c-dev.h>
 #include <linux/i2c.h>
+#include <linux/rtc.h>
 
 namespace nvidia
 {
@@ -310,6 +311,34 @@ bool check_rw_filesystems()
         return true;
     std::cerr << "[ERROR] Mount failure at /run/initramfs/rw\n";
     return false;
+}
+
+bool set_system_clock(std::time_t epoch)
+{
+    const timespec ts{.tv_sec = epoch, .tv_nsec = 0};
+    if (clock_settime(CLOCK_REALTIME, &ts) == 0)
+        return true;
+    std::cerr << std::format("cannot set the clock to {}: {}\n", epoch,
+                             std::strerror(errno));
+    return false;
+}
+
+int rtc_write_system_time(int fd)
+{
+    const std::time_t now = std::time(nullptr);
+    std::tm utc{};
+    gmtime_r(&now, &utc);
+    const rtc_time tm{
+        .tm_sec = utc.tm_sec,
+        .tm_min = utc.tm_min,
+        .tm_hour = utc.tm_hour,
+        .tm_mday = utc.tm_mday,
+        .tm_mon = utc.tm_mon,
+        .tm_year = utc.tm_year,
+        .tm_wday = utc.tm_wday,
+        .tm_yday = utc.tm_yday,
+        .tm_isdst = 0};
+    return ioctl(fd, RTC_SET_TIME, &tm) == 0 ? 0 : errno;
 }
 
 namespace

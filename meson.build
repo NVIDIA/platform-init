@@ -16,6 +16,7 @@ cli11_dep = dependency(
     default_options: ['tests=disabled'],
 )
 i2c_dep = meson.get_compiler('cpp').find_library('i2c')
+libubootenv_dep = dependency('libubootenv')
 util_srcs = files('gpio.cpp', 'i2c.cpp', 'utilities.cpp')
 
 platform_srcs = files(
@@ -55,7 +56,14 @@ platform_srcs = files(
 executable(
     'platform',
     ['platform.cpp'] + platform_srcs + util_srcs,
-    dependencies: [gpiodcxx_dep, libsystemd_dep, cli11_dep, i2c_dep, sdbusplus],
+    dependencies: [
+        gpiodcxx_dep,
+        libsystemd_dep,
+        cli11_dep,
+        i2c_dep,
+        sdbusplus,
+        libubootenv_dep,
+    ],
     include_directories: ['.', 'platforms'],
     install: true,
     install_dir: get_option('libexecdir'),
@@ -87,10 +95,12 @@ if get_option('tests').allowed()
             ),
         )
         test(
-            'test-standby-wait',
+            'test-compute-hmc',
             executable(
-                'test-standby-wait',
+                'test-compute-hmc',
                 'test/test-standby-wait.cpp',
+                'test/test-rtc-sync.cpp',
+                'platforms/nvidia/compute_bmc_common.cpp',
                 'platforms/nvidia/compute_hmc_common.cpp',
                 'platforms/nvidia/nvidia_platform_utils.cpp',
                 util_srcs,
@@ -101,6 +111,7 @@ if get_option('tests').allowed()
                     i2c_dep,
                     libsystemd_dep,
                     sdbusplus,
+                    libubootenv_dep,
                 ],
             ),
         )
@@ -119,6 +130,14 @@ configure_file(
 )
 
 script_base = 'platforms/nvidia/scripts/platforms'
+
+# Orderings for the HMC inits that bind the HPM expanders and set the clock.
+if platform_name in ['nvidia-vr-nvl-hmc', 'nvidia-vr-nvl-hmc-ast2700']
+    install_data(
+        'platform_init-hmc.conf',
+        install_dir: systemd_system_unit_dir / 'platform_init.service.d',
+    )
+endif
 
 # Replaces bmc-plat-specific-preps.sh under the same unit name.
 if platform_name in [

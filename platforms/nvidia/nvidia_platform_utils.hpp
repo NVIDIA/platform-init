@@ -31,6 +31,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -106,6 +107,13 @@ bool check_rofs();
 
 // emmc-rwfs check_rw_filesystems.
 bool check_rw_filesystems();
+
+// date -u -s @<epoch>.
+bool set_system_clock(std::time_t epoch);
+
+// hwclock -w: the RTC open on <fd> takes the system clock, in UTC.
+// Returns 0, or an errno.
+int rtc_write_system_time(int fd);
 
 // An external RTC: answers <id> in <reg> at <addr>; id < 0 never matches.
 struct RtcId

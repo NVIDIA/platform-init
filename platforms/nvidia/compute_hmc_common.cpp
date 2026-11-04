@@ -3,6 +3,8 @@
 
 #include "compute_hmc_common.hpp"
 
+#include <libuboot.h>
+
 namespace nvidia
 {
 
@@ -109,6 +111,167 @@ void wait_for_standby_power(std::string_view tag, const StandbyConfig& cfg,
         std::cerr << std::format("{}: BRD1 not present\n", tag);
         std::ofstream marker{root / "run/brd1_not_present"};
     }
+}
+
+std::string uboot_env_read(std::string_view key)
+{
+    uboot_ctx* ctx = nullptr;
+    std::string value;
+    if (libuboot_initialize(&ctx, nullptr) < 0)
+        return value;
+    if (libuboot_read_config(ctx, "/etc/fw_env.config") == 0 &&
+        libuboot_open(ctx) == 0)
+    {
+        if (char* v = libuboot_get_env(ctx, std::string{key}.c_str()))
+        {
+            value = v;
+            std::free(v); // NOLINT(cppcoreguidelines-no-malloc)
+        }
+        libuboot_close(ctx);
+    }
+    libuboot_exit(ctx);
+    return value;
+}
+
+bool use_external_rtc(std::string_view tag, const RtcSync& cfg,
+                      const RtcSyncIo& io)
+{
+    for (unsigned attempt = 1; attempt <= cfg.readiness_tries; ++attempt)
+    {
+        const int pg = io.power_good(cfg.host_power_good);
+        if (pg == 0 || pg == 1)
+        {
+            std::cerr << std::format("{}: {} = {}\n", tag, cfg.host_power_good,
+                                     pg);
+            return pg == 0;
+        }
+        if (const auto reason = io.env("reset_reason"); !reason.empty())
+        {
+            std::cerr << std::format("{}: boot reason '{}'\n", tag, reason);
+            return reason == "Power_On";
+        }
+        if (attempt < cfg.readiness_tries)
+            std::this_thread::sleep_for(cfg.retry_delay);
+    }
+    std::cerr << std::format("{}: host power and boot reason unknown\n", tag);
+    return false;
+}
+
+std::optional<std::string> newest_external_rtc(
+    const std::filesystem::path& root)
+{
+    std::optional<std::string> newest;
+    unsigned max = 0;
+    std::error_code ec;
+    for (const auto& e :
+         std::filesystem::directory_iterator(root / "sys/class/rtc", ec))
+    {
+        const auto name = e.path().filename().string();
+        unsigned n = 0;
+        char extra = 0;
+        if (std::sscanf(name.c_str(), "rtc%u%c", &n, &extra) == 1 && n > max)
+        {
+            max = n;
+            newest = name;
+        }
+    }
+    return newest;
+}
+
+static bool set_clock_from(std::string_view tag, const RtcSync& cfg,
+                           const RtcSyncIo& io, const std::string& rtc)
+{
+    const auto value = detail::sysfs_read(
+        (io.root / "sys/class/rtc" / rtc / "since_epoch").string());
+    std::time_t epoch = 0;
+    if (!value ||
+        std::from_chars(value->data(), value->data() + value->size(), epoch)
+                .ec != std::errc{})
+        return false;
+    if (epoch < cfg.min_epoch)
+    {
+        std::cerr << std::format("{}: {} reads {}, refusing to set the clock\n",
+                                 tag, rtc, epoch);
+        return false;
+    }
+    std::cerr << std::format("{}: clock set from {} ({})\n", tag, rtc, epoch);
+    return io.set_clock(epoch);
+}
+
+static bool sync_external(std::string_view tag, const RtcSync& cfg,
+                          const RtcSyncIo& io)
+{
+    const auto found = rtc_detect(cfg.external);
+    if (!found)
+        return false;
+    const auto& part = cfg.external.parts[found->index];
+    std::optional<std::string> rtc;
+    // rtc_detect bound it once already.
+    for (unsigned i = 1; !rtc && i <= cfg.bind_tries; ++i)
+    {
+        if (i > 1)
+        {
+            std::this_thread::sleep_for(cfg.bind_delay);
+            i2c::new_device(found->bus, part.addr, part.driver);
+        }
+        std::this_thread::sleep_for(cfg.bind_delay);
+        rtc = newest_external_rtc(io.root);
+    }
+    const bool ok = rtc && set_clock_from(tag, cfg, io, *rtc);
+    if (ok)
+    {
+        const int fd = open((io.root / "dev/rtc0").c_str(), O_RDWR | O_CLOEXEC);
+        if (const int err = fd < 0 ? errno : rtc_write_system_time(fd); err)
+            std::cerr << std::format("{}: cannot write rtc0: {}\n", tag,
+                                     std::strerror(err));
+        if (fd >= 0)
+            close(fd);
+    }
+    detail::sysfs_write(
+        (io.root /
+         std::format("sys/bus/i2c/devices/i2c-{}/delete_device", found->bus))
+            .string(),
+        std::format("{:#04x}", part.addr));
+    return ok;
+}
+
+static bool sync_internal(std::string_view tag, const RtcSync& cfg,
+                          const RtcSyncIo& io)
+{
+    for (unsigned attempt = 1; attempt <= cfg.internal_tries; ++attempt)
+    {
+        if (!std::filesystem::exists(io.root / "dev/rtc0"))
+            std::cerr << std::format("{}: /dev/rtc0 not present yet\n", tag);
+        else if (detail::sysfs_read(
+                     (io.root / "sys/class/rtc/rtc0/hctosys").string()) == "1")
+        {
+            std::cerr << std::format("{}: clock already set from rtc0\n", tag);
+            return true;
+        }
+        else if (set_clock_from(tag, cfg, io, "rtc0"))
+            return true;
+        if (attempt < cfg.internal_tries)
+            std::this_thread::sleep_for(cfg.retry_delay);
+    }
+    std::cerr << std::format("{}: ERROR: clock not set from any RTC\n", tag);
+    return false;
+}
+
+bool sync_clock_from_rtc(std::string_view tag, const RtcSync& cfg,
+                         const RtcSyncIo& io)
+{
+    if (use_external_rtc(tag, cfg, io))
+    {
+        for (unsigned attempt = 1; attempt <= cfg.external_tries; ++attempt)
+        {
+            if (sync_external(tag, cfg, io))
+                return true;
+            if (attempt < cfg.external_tries)
+                std::this_thread::sleep_for(cfg.retry_delay);
+        }
+        std::cerr << std::format("{}: external RTC failed, using rtc0\n", tag);
+    }
+    return sync_internal(tag, cfg, io);
 }
 
 bool check_hmc_filesystems()

@@ -48,28 +48,11 @@ static void setup_rtc()
                              std::strerror(errno));
 
     if (!time_sync_enabled())
-    {
-        const timespec epoch{.tv_sec = 1577836800, .tv_nsec = 0};
-        if (clock_settime(CLOCK_REALTIME, &epoch) != 0)
-            std::cerr << std::format("hgxr-hmc: cannot set the clock: {}\n",
-                                     std::strerror(errno));
-    }
+        set_system_clock(1577836800);
 
-    const std::time_t now = std::time(nullptr);
-    std::tm utc{};
-    gmtime_r(&now, &utc);
-    tm = rtc_time{.tm_sec = utc.tm_sec,
-                  .tm_min = utc.tm_min,
-                  .tm_hour = utc.tm_hour,
-                  .tm_mday = utc.tm_mday,
-                  .tm_mon = utc.tm_mon,
-                  .tm_year = utc.tm_year,
-                  .tm_wday = utc.tm_wday,
-                  .tm_yday = utc.tm_yday,
-                  .tm_isdst = 0};
-    if (ioctl(fd, RTC_SET_TIME, &tm) != 0)
+    if (const int err = rtc_write_system_time(fd); err != 0)
         std::cerr << std::format("hgxr-hmc: cannot set the RTC: {}\n",
-                                 std::strerror(errno));
+                                 std::strerror(err));
     close(fd);
 }
 

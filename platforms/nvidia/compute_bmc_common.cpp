@@ -395,18 +395,19 @@ bool reset_usb_hub_if_absent(std::string_view tag, const char* line,
     return false;
 }
 
-void rtc_detect(const Rtc& rtc)
+std::optional<RtcFound> rtc_detect(const Rtc& rtc)
 {
     if (rtc.buses.empty() || rtc.parts.empty())
-        return;
+        return std::nullopt;
     auto found = detect_rtc(rtc.buses, rtc.parts, false);
     if (!found)
-        return;
+        return std::nullopt;
     const auto& part = rtc.parts[found->index];
     std::cerr << std::format(
         "rtc_detect: bus={} addr={:#x}: found {} (id={:#x})\n", found->bus,
         part.addr, part.driver, part.id);
     i2c::new_device(found->bus, part.addr, part.driver);
+    return found;
 }
 
 int init_failed(const Rtc& rtc)
