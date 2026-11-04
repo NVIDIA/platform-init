@@ -19,6 +19,8 @@ int init_vr_nvl_bmc();
 int init_vr_nvl_bmc_ast2700();
 int init_vr_nvl_hmc();
 int init_vr_nvl_hmc_ast2700();
+int early_init_vr_nvl_hmc();
+int early_init_vr_nvl_hmc_ast2700();
 int init_vr_e5010_bmc();
 int init_vr_quark_bmc();
 int init_vr_vhmc_quark();

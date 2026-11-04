@@ -3,8 +3,6 @@
 
 #include "compute_hmc_common.hpp"
 
-#include <libuboot.h>
-
 namespace nvidia
 {
 
@@ -113,24 +111,24 @@ void wait_for_standby_power(std::string_view tag, const StandbyConfig& cfg,
     }
 }
 
-std::string uboot_env_read(std::string_view key)
+std::string uboot_env_read(std::string_view key,
+                           const std::filesystem::path& root)
 {
-    uboot_ctx* ctx = nullptr;
-    std::string value;
-    if (libuboot_initialize(&ctx, nullptr) < 0)
-        return value;
-    if (libuboot_read_config(ctx, "/etc/fw_env.config") == 0 &&
-        libuboot_open(ctx) == 0)
+    std::error_code ec;
+    for (const auto& e :
+         std::filesystem::directory_iterator(root / "sys/class/mtd", ec))
     {
-        if (char* v = libuboot_get_env(ctx, std::string{key}.c_str()))
-        {
-            value = v;
-            std::free(v); // NOLINT(cppcoreguidelines-no-malloc)
-        }
-        libuboot_close(ctx);
+        if (detail::sysfs_read((e.path() / "name").string()) != "u-boot-env")
+            continue;
+        std::ifstream f{root / "dev" / e.path().filename()};
+        f.ignore(5);
+        const auto prefix = std::format("{}=", key);
+        for (std::string var; std::getline(f, var, '\0') && !var.empty();)
+            if (var.starts_with(prefix))
+                return var.substr(prefix.size());
+        break;
     }
-    libuboot_exit(ctx);
-    return value;
+    return {};
 }
 
 bool use_external_rtc(std::string_view tag, const RtcSync& cfg,
@@ -138,14 +136,16 @@ bool use_external_rtc(std::string_view tag, const RtcSync& cfg,
 {
     for (unsigned attempt = 1; attempt <= cfg.readiness_tries; ++attempt)
     {
-        const int pg = io.power_good(cfg.host_power_good);
+        const int pg =
+            cfg.host_power_good ? io.power_good(cfg.host_power_good) : -1;
         if (pg == 0 || pg == 1)
         {
             std::cerr << std::format("{}: {} = {}\n", tag, cfg.host_power_good,
                                      pg);
             return pg == 0;
         }
-        if (const auto reason = io.env("reset_reason"); !reason.empty())
+        if (const auto reason = io.env("reset_reason", io.root);
+            !reason.empty())
         {
             std::cerr << std::format("{}: boot reason '{}'\n", tag, reason);
             return reason == "Power_On";

@@ -60,11 +60,12 @@ void wait_for_standby_power(std::string_view tag, const StandbyConfig& cfg,
                             bool (*present)(unsigned, uint8_t) = i2c::probe);
 
 // The external RTC shares its bus with the host, so it is read only while
-// the host is down (<host_power_good> low); rtc0 is the internal one.
+// the host is down (<host_power_good> low); rtc0 is the internal one. With
+// no <host_power_good>, the U-Boot reset_reason decides.
 struct RtcSync
 {
     Rtc external;
-    const char* host_power_good;
+    const char* host_power_good = nullptr;
     unsigned readiness_tries = 5;
     unsigned external_tries = 3;
     unsigned bind_tries = 3;
@@ -74,15 +75,18 @@ struct RtcSync
     std::time_t min_epoch = 1700000000;
 };
 
-// fw_printenv -n <key>, through libubootenv.
-std::string uboot_env_read(std::string_view key);
+// rtc-sync.sh's get_fw_env_var: <key> from the raw u-boot-env MTD under
+// <root>, CRC and flag byte skipped, no CRC check.
+std::string uboot_env_read(std::string_view key,
+                           const std::filesystem::path& root);
 
 // Test seams; the defaults are the hardware.
 struct RtcSyncIo
 {
     std::filesystem::path root{"/"};
     int (*power_good)(const char*) = gpio_get;
-    std::string (*env)(std::string_view) = uboot_env_read;
+    std::string (*env)(std::string_view,
+                       const std::filesystem::path&) = uboot_env_read;
     bool (*set_clock)(std::time_t) = set_system_clock;
 };
 

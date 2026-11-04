@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <array>
 #include <iostream>
+#include <span>
 #include <string_view>
 #include <utility>
 
@@ -50,6 +51,27 @@ constexpr auto init_functions =
           nvidia::init_switch_spc6_ast2600_bmc},
          {"nvidia-switch-ast2700-bmc", nvidia::init_switch_ast2700_bmc}});
 
+// Before sysinit.target (platform_early_init.service), in the initramfs
+// scripts' place.
+constexpr auto early_init_functions =
+    std::to_array<std::pair<std::string_view, int (*)()>>(
+        {{"nvidia-vr-nvl-hmc", nvidia::early_init_vr_nvl_hmc},
+         {"nvidia-vr-nvl-hmc-ast2700", nvidia::early_init_vr_nvl_hmc_ast2700}});
+
+static int run(std::span<const std::pair<std::string_view, int (*)()>> table,
+               std::string_view name, const CLI::App* sub)
+{
+    const auto it = std::ranges::find_if(table, [name](const auto& val) {
+        return val.first == name;
+    });
+    if (it == table.end())
+    {
+        std::cerr << sub->help() << "\n";
+        return EXIT_FAILURE;
+    }
+    return it->second();
+}
+
 int main(int argc, char** argv)
 {
     CLI::App app("Platform init CLI");
@@ -63,6 +85,9 @@ int main(int argc, char** argv)
         ->add_option("platform_name", platform_name,
                      "Name of the platform to init")
         ->required();
+    CLI::App* early_sub = app.add_subcommand(
+        "early-init", "Bring up what the platform needs before sysinit");
+    early_sub->add_option("platform_name", platform_name)->required();
     CLI::App* preps_sub = app.add_subcommand(
         "preps", "Stage the platform-specific files before udev starts");
     preps_sub->add_option("platform_name", platform_name)->required();
@@ -93,16 +118,9 @@ int main(int argc, char** argv)
         return nvidia::switch_mctp_ready();
     }
 
-    const auto* it = std::ranges::find_if(
-        init_functions,
-        [&platform_name](const std::pair<std::string_view, int (*)()> val) {
-            return val.first == platform_name;
-        });
-    if (it == init_functions.end())
+    if (early_sub->parsed())
     {
-        std::cerr << init_sub->help() << "\n";
-        return EXIT_FAILURE;
+        return run(early_init_functions, platform_name, early_sub);
     }
-
-    return it->second();
+    return run(init_functions, platform_name, init_sub);
 }

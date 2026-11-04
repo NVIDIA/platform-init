@@ -36,7 +36,7 @@ int fake_power_good(const char*)
     return power_good;
 }
 
-std::string fake_env(std::string_view)
+std::string fake_env(std::string_view, const fs::path&)
 {
     return reset_reason;
 }
@@ -164,4 +164,38 @@ TEST_F(RtcSyncTest, NoRtc0Fails)
 {
     power_good = 1;
     EXPECT_FALSE(sync_clock_from_rtc("t", cfg, io));
+}
+
+TEST_F(RtcSyncTest, NoPowerGoodLineGoesToResetReason)
+{
+    RtcSync no_line = cfg;
+    no_line.host_power_good = nullptr;
+    power_good = 1;
+    reset_reason = "Power_On";
+    EXPECT_TRUE(use_external_rtc("t", no_line, io));
+    EXPECT_EQ(gpio_reads, 0U);
+}
+
+TEST_F(RtcSyncTest, ResetReasonFromUbootEnvMtd)
+{
+    for (const auto& [mtd, name] :
+         std::array<std::pair<const char*, const char*>, 2>{
+             {{"mtd1", "rofs"}, {"mtd2", "u-boot-env"}}})
+    {
+        fs::create_directories(root / "sys/class/mtd" / mtd);
+        std::ofstream{root / "sys/class/mtd" / mtd / "name"} << name << "\n";
+    }
+    fs::create_directories(root / "dev");
+    // CRC, flag byte, then NUL-separated variables up to an empty one.
+    std::string env{"\x12\x34\x56\x78\x01", 5};
+    for (const auto* var :
+         {"bootdelay=1", "reset_reason=WDT1_reset", "", "late=x"})
+        env.append(var).push_back('\0');
+    std::ofstream{root / "dev/mtd2", std::ios::binary} << env;
+
+    using nvidia::compute::uboot_env_read;
+    EXPECT_EQ(uboot_env_read("reset_reason", root), "WDT1_reset");
+    EXPECT_EQ(uboot_env_read("bootdelay", root), "1");
+    EXPECT_EQ(uboot_env_read("late", root), "");
+    EXPECT_EQ(uboot_env_read("missing", root), "");
 }
