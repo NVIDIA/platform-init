@@ -33,7 +33,6 @@ platform_srcs = files(
     'platforms/nvidia/switch_common.cpp',
     'platforms/nvidia/switch_mcu.cpp',
     'platforms/nvidia/switch_misc.cpp',
-    'platforms/nvidia/switch_preps.cpp',
     'platforms/nvidia/switch_rosalind_bmc.cpp',
     'platforms/nvidia/switch_spc6_ast2600_bmc.cpp',
     'platforms/nvidia/vr_c2_bmc.cpp',
@@ -99,27 +98,6 @@ configure_file(
     install: true,
     configuration: configuration_data({'PLATFORM_NAME': platform_name}),
 )
-
-if get_option('tests').allowed()
-    preps_gtest = dependency(
-        'gtest',
-        main: true,
-        required: get_option('tests').enabled(),
-    )
-    if preps_gtest.found()
-        test(
-            'test-switch-preps',
-            executable(
-                'test-switch-preps',
-                'test/test-switch-preps.cpp',
-                'platforms/nvidia/switch_preps.cpp',
-                'i2c.cpp',
-                include_directories: ['.', 'platforms'],
-                dependencies: [preps_gtest, i2c_dep],
-            ),
-        )
-    endif
-endif
 
 subdir('emmc-manager')
 

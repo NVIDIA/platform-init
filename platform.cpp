@@ -5,7 +5,6 @@
 #include "i2c.hpp"
 #include "intel/platforms.hpp"
 #include "nvidia/platforms.hpp"
-#include "nvidia/switch_preps.hpp"
 #include "utilities.hpp"
 
 #include <fcntl.h>
@@ -20,39 +19,32 @@
 #include <string_view>
 #include <utility>
 
-constexpr auto init_functions = std::to_array<
-    std::pair<std::string_view, int (*)()>>(
-    {{"intel-acrp", intel::init_acrp},
-     {"intel-jcrp", intel::init_jcrp},
-     {"nvidia-gb200", nvidia::init_gb200_base},
-     {"nvidia-gb200-with-p2020", nvidia::init_gb200_with_p2020},
-     {"nvidia-gb200nvl-bmc", nvidia::init_gb200nvl_bmc},
-     {"nvidia-gb200nvl-hmc", nvidia::init_gb200nvl_hmc},
-     {"nvidia-hgxr-hmc", nvidia::init_hgxr_hmc},
-     {"nvidia-nvl32", nvidia::init_nvl32},
-     {"nvidia-vr-c2-bmc", nvidia::init_vr_c2_bmc},
-     {"nvidia-vr-nvl", nvidia::init_vr_nvl},
-     {"nvidia-vr-nvl-bmc", nvidia::init_vr_nvl_bmc},
-     {"nvidia-vr-nvl-bmc-ast2700", nvidia::init_vr_nvl_bmc_ast2700},
-     {"nvidia-vr-nvl-hmc", nvidia::init_vr_nvl_hmc},
-     {"nvidia-vr-nvl-hmc-ast2700", nvidia::init_vr_nvl_hmc_ast2700},
-     {"nvidia-vr-e5010-bmc", nvidia::init_vr_e5010_bmc},
-     {"nvidia-vr-quark-bmc", nvidia::init_vr_quark_bmc},
-     {"nvidia-vr-vhmc-quark", nvidia::init_vr_vhmc_quark},
-     {"nvidia-vru-nvl-bmc", nvidia::init_vru_nvl_bmc},
-     {"nvidia-vru-nvl-bmc-strata", nvidia::init_vr_nvl_bmc_ast2700},
-     {"nvidia-vru-nvl-hmc", nvidia::init_vru_nvl_hmc},
-     {"nvidia-switch-rosalind-bmc", nvidia::init_switch_rosalind_bmc},
-     {"nvidia-switch-spc6-ast2600-bmc", nvidia::init_switch_spc6_ast2600_bmc},
-     {"nvidia-switch-ast2700-bmc", nvidia::init_switch_ast2700_bmc},
-     // Boot stages run by their own units: "<platform>-preps" before udev.
-     {"nvidia-switch-ast2700-bmc-preps",
-      [] { return nvidia::switch_plat_preps("nvidia-switch-ast2700-bmc"); }},
-     {"nvidia-switch-rosalind-bmc-preps",
-      [] { return nvidia::switch_plat_preps("nvidia-switch-rosalind-bmc"); }},
-     {"nvidia-switch-spc6-ast2600-bmc-preps", [] {
-          return nvidia::switch_plat_preps("nvidia-switch-spc6-ast2600-bmc");
-      }}});
+constexpr auto init_functions =
+    std::to_array<std::pair<std::string_view, int (*)()>>(
+        {{"intel-acrp", intel::init_acrp},
+         {"intel-jcrp", intel::init_jcrp},
+         {"nvidia-gb200", nvidia::init_gb200_base},
+         {"nvidia-gb200-with-p2020", nvidia::init_gb200_with_p2020},
+         {"nvidia-gb200nvl-bmc", nvidia::init_gb200nvl_bmc},
+         {"nvidia-gb200nvl-hmc", nvidia::init_gb200nvl_hmc},
+         {"nvidia-hgxr-hmc", nvidia::init_hgxr_hmc},
+         {"nvidia-nvl32", nvidia::init_nvl32},
+         {"nvidia-vr-c2-bmc", nvidia::init_vr_c2_bmc},
+         {"nvidia-vr-nvl", nvidia::init_vr_nvl},
+         {"nvidia-vr-nvl-bmc", nvidia::init_vr_nvl_bmc},
+         {"nvidia-vr-nvl-bmc-ast2700", nvidia::init_vr_nvl_bmc_ast2700},
+         {"nvidia-vr-nvl-hmc", nvidia::init_vr_nvl_hmc},
+         {"nvidia-vr-nvl-hmc-ast2700", nvidia::init_vr_nvl_hmc_ast2700},
+         {"nvidia-vr-e5010-bmc", nvidia::init_vr_e5010_bmc},
+         {"nvidia-vr-quark-bmc", nvidia::init_vr_quark_bmc},
+         {"nvidia-vr-vhmc-quark", nvidia::init_vr_vhmc_quark},
+         {"nvidia-vru-nvl-bmc", nvidia::init_vru_nvl_bmc},
+         {"nvidia-vru-nvl-bmc-strata", nvidia::init_vr_nvl_bmc_ast2700},
+         {"nvidia-vru-nvl-hmc", nvidia::init_vru_nvl_hmc},
+         {"nvidia-switch-rosalind-bmc", nvidia::init_switch_rosalind_bmc},
+         {"nvidia-switch-spc6-ast2600-bmc",
+          nvidia::init_switch_spc6_ast2600_bmc},
+         {"nvidia-switch-ast2700-bmc", nvidia::init_switch_ast2700_bmc}});
 
 int main(int argc, char** argv)
 {
