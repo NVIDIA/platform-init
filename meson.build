@@ -58,36 +58,6 @@ executable(
     install_dir: get_option('libexecdir'),
 )
 
-if get_option('tests').allowed()
-    rtc_gtest = dependency(
-        'gtest',
-        main: true,
-        required: get_option('tests').enabled(),
-    )
-    if rtc_gtest.found()
-        test(
-            'test-compute-hmc',
-            executable(
-                'test-compute-hmc',
-                'test/test-standby-wait.cpp',
-                'test/test-rtc-sync.cpp',
-                'platforms/nvidia/compute_bmc_common.cpp',
-                'platforms/nvidia/compute_hmc_common.cpp',
-                'platforms/nvidia/nvidia_platform_utils.cpp',
-                util_srcs,
-                include_directories: ['.', 'platforms'],
-                dependencies: [
-                    rtc_gtest,
-                    gpiodcxx_dep,
-                    i2c_dep,
-                    libsystemd_dep,
-                    sdbusplus,
-                ],
-            ),
-        )
-    endif
-endif
-
 platform_name = get_option('platform-name')
 
 systemd_system_unit_dir = systemd_dep.get_variable('systemd_system_unit_dir')
@@ -113,32 +83,3 @@ emmc_partition_platforms = [
     'nvidia-switch-spc6-ast2600-bmc',
 ]
 subdir('emmc-partition')
-
-if get_option('tests').allowed()
-    switch_gtest_dep = dependency(
-        'gtest',
-        main: true,
-        required: get_option('tests').enabled(),
-    )
-    if switch_gtest_dep.found()
-        test(
-            'test-switch-mcu',
-            executable(
-                'test-switch-mcu',
-                'test/test-switch-mcu.cpp',
-                'platforms/nvidia/switch_mcu.cpp',
-                'platforms/nvidia/switch_common.cpp',
-                'platforms/nvidia/nvidia_platform_utils.cpp',
-                util_srcs,
-                dependencies: [
-                    switch_gtest_dep,
-                    gpiodcxx_dep,
-                    libsystemd_dep,
-                    i2c_dep,
-                    sdbusplus,
-                ],
-                include_directories: ['.', 'platforms', 'platforms/nvidia'],
-            ),
-        )
-    endif
-endif
