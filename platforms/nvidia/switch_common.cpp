@@ -686,34 +686,6 @@ void write_system_hw_rev(std::string_view eeprom_path, std::string_view hid,
     hw_mgmt_write_config("rev_id", rev);
 }
 
-int modprobe_with_timeout(std::string_view module, std::chrono::seconds timeout,
-                          bool ignore_install)
-{
-    const auto cmd =
-        std::format("timeout -s KILL {} modprobe {}{}", timeout.count(),
-                    ignore_install ? "-i " : "", module);
-    const int raw = std::system(cmd.c_str()); // NOLINT(cert-env33-c)
-    int status = raw;
-    if (raw != -1)
-    {
-        if (WIFEXITED(raw))
-            status = WEXITSTATUS(raw);
-        else if (WIFSIGNALED(raw))
-            status = 128 + WTERMSIG(raw);
-    }
-
-    if (status == 0)
-        std::cerr << std::format("modprobe_with_timeout: {} loaded\n", module);
-    else if (status == 137)
-        std::cerr << std::format(
-            "modprobe_with_timeout: {} timed out after {}s\n", module,
-            timeout.count());
-    else
-        std::cerr << std::format(
-            "modprobe_with_timeout: {} failed (status {})\n", module, status);
-    return status;
-}
-
 std::string platform_feature(std::string_view key, std::string_view path)
 {
     std::ifstream conf{std::string{path}};

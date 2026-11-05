@@ -129,12 +129,6 @@ void write_system_hw_rev(std::string_view eeprom_path, std::string_view hid,
                          std::span<const std::string_view> allowed_hids,
                          std::string_view log_prefix);
 
-// Returns 137 on timeout; callers must not fail init on non-zero.
-int modprobe_with_timeout(
-    std::string_view module,
-    std::chrono::seconds timeout = std::chrono::seconds{5},
-    bool ignore_install = false);
-
 // Read as key=value, not sourced; missing means most conservative mode.
 std::string platform_feature(
     std::string_view key,

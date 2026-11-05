@@ -463,28 +463,6 @@ static int fru_sync_cartridge_to_cpld(
     return EXIT_FAILURE;
 }
 
-// Non-fatal: only ASIC firmware recovery over USB-SMBus needs it.
-static void rosalind_init_usb_smbus_bridge()
-{
-    std::cerr << "switch-rosalind-bmc: loading hid_cp2112 for the USB-I2C "
-                 "bridge (ASIC firmware recovery)\n";
-    if (modprobe_with_timeout("hid_cp2112", std::chrono::seconds{5}) != 0)
-    {
-        return;
-    }
-    if (std::filesystem::exists("/dev/hidraw0") &&
-        std::filesystem::exists("/dev/hidraw1"))
-    {
-        std::cerr << "switch-rosalind-bmc: USB-I2C bridge devices created: "
-                     "/dev/hidraw0, /dev/hidraw1\n";
-    }
-    else
-    {
-        std::cerr << "switch-rosalind-bmc: hid_cp2112 loaded but "
-                     "/dev/hidraw{0,1} not found\n";
-    }
-}
-
 // ARMv7_CPU as spelled in this machine's helpers copy.
 constexpr std::array<std::string_view, 1> rosalind_decode_cpu_types{"0xC07"};
 
@@ -508,8 +486,6 @@ int init_switch_rosalind_bmc()
     hw_mgmt_wait_system_tree("switch-rosalind-bmc");
 
     hw_mgmt_link_gpio(rosalind_sysfs_gpios);
-
-    rosalind_init_usb_smbus_bridge();
 
     const bool cpu_off = hw_mgmt_take_i2c_when_cpu_off(rosalind_mlxreg_io_hwmon,
                                                        "switch-rosalind-bmc");
