@@ -75,18 +75,6 @@ std::string first_word(std::span<const uint8_t> raw)
 
 } // namespace detail
 
-void shell_out(std::string_view cmd, std::string_view log_prefix)
-{
-    const std::string command{cmd};
-    std::cerr << std::format("{}: calling {}\n", log_prefix, command);
-    if (const int rc = std::system(command.c_str());
-        rc != 0) // NOLINT(cert-env33-c)
-    {
-        std::cerr << std::format("{}: '{}' failed (status {})\n", log_prefix,
-                                 command, rc);
-    }
-}
-
 std::string hw_mgmt_hwmon_attr(std::string_view hwmon_dir,
                                std::string_view attribute,
                                std::string_view log_prefix)

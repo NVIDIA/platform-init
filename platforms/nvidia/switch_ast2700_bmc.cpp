@@ -1000,22 +1000,6 @@ int init_switch_ast2700_bmc()
         hw_mgmt_mcu_reset();
     }
 
-    const auto leakSource = platform_feature("LEAK_DETECTION_SOURCE");
-    if (leakSource == "mcu")
-    {
-        std::cerr << "switch-ast2700-bmc: leak detection comes from the "
-                     "MCU, skipping A2D configuration\n";
-    }
-    else if (leakSource == "none")
-    {
-        std::cerr << "switch-ast2700-bmc: no leak detectors on this "
-                     "platform, skipping A2D configuration\n";
-    }
-    else
-    {
-        shell_out("a2d_leakage_config.sh", "switch-ast2700-bmc");
-    }
-
     // eMMC-backed, unlike the other switch machines.
     if (filesystem_check() != EXIT_SUCCESS)
     {

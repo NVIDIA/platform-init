@@ -591,8 +591,6 @@ int init_switch_rosalind_bmc()
                      "continuing to power CPU\n";
     }
 
-    shell_out("a2d_leakage_config.sh", "switch-rosalind-bmc");
-
     if (filesystem_check_mtd() != EXIT_SUCCESS)
     {
         std::cerr << "switch-rosalind-bmc: FATAL: filesystem check "

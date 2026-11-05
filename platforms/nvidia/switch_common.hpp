@@ -32,8 +32,6 @@ std::string first_word(std::span<const uint8_t> raw);
 
 } // namespace detail
 
-void shell_out(std::string_view cmd, std::string_view log_prefix);
-
 // The hwmon instance number is not stable across boots; resolve the glob.
 std::string hw_mgmt_hwmon_attr(std::string_view hwmon_dir,
                                std::string_view attribute,

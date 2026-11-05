@@ -178,8 +178,6 @@ int init_switch_spc6_ast2600_bmc()
     write_system_hw_rev(spc6_2600_vpd_eeprom, hid, spc6_2600_bom_hids,
                         "switch-spc6-ast2600-bmc");
 
-    shell_out("a2d_leakage_config.sh", "switch-spc6-ast2600-bmc");
-
     if (filesystem_check_mtd() != EXIT_SUCCESS)
     {
         std::cerr << "switch-spc6-ast2600-bmc: FATAL: filesystem check "
