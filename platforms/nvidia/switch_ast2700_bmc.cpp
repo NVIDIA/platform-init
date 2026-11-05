@@ -9,7 +9,6 @@
 #include "i2c.hpp"
 #include "switch_common.hpp"
 #include "switch_mcu.hpp"
-#include "switch_misc.hpp"
 #include "utilities.hpp"
 
 #include <systemd/sd-daemon.h>
@@ -920,10 +919,6 @@ int init_switch_ast2700_bmc()
     using namespace std::chrono_literals;
 
     std::cerr << "switch-ast2700-bmc: platform init start\n";
-
-    // The recovery slave first: the recovery path needs it most when a later
-    // step fails.
-    switch_misc::i2c_slave_setup_if_configured();
 
     const auto gpio_config = load_gpio_pin_config().value_or(GpioPinConfig{});
     sysfs_gpio_apply(gpio_config.pins);
