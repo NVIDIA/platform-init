@@ -113,7 +113,7 @@ if get_option('tests').allowed()
             'test-switch-preps',
             executable(
                 'test-switch-preps',
-                'platforms/nvidia/test/test_switch_preps.cpp',
+                'test/test-switch-preps.cpp',
                 'platforms/nvidia/switch_preps.cpp',
                 'i2c.cpp',
                 include_directories: ['.', 'platforms'],
