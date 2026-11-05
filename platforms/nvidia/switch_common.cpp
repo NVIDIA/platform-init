@@ -748,66 +748,6 @@ bool module_loaded(std::string_view module)
     return false;
 }
 
-void run_nos_hook(std::string_view phase, std::string_view hook_file)
-{
-    const std::filesystem::path hook{hook_file};
-    std::error_code ec;
-    if (!std::filesystem::is_regular_file(hook, ec))
-    {
-        std::cerr << std::format(
-            "run_nos_hook: no hook file, {} init hooks are not performed\n",
-            phase);
-        return;
-    }
-
-    if (::access(hook.c_str(), X_OK) != 0)
-    {
-        std::cerr << std::format(
-            "run_nos_hook: '{}' is not executable, changing permissions\n",
-            hook_file);
-        std::filesystem::permissions(hook,
-                                     std::filesystem::perms::owner_exec |
-                                         std::filesystem::perms::group_exec |
-                                         std::filesystem::perms::others_exec,
-                                     std::filesystem::perm_options::add, ec);
-        if (ec)
-        {
-            std::cerr << std::format("run_nos_hook: chmod +x {}: {}\n",
-                                     hook_file, ec.message());
-        }
-    }
-
-    std::filesystem::create_directories(hw_mgmt_config_path, ec);
-    std::filesystem::copy_file(
-        hook, std::format("{}/last-executed-fixup.sh", hw_mgmt_config_path),
-        std::filesystem::copy_options::overwrite_existing, ec);
-    if (ec)
-    {
-        std::cerr << std::format("run_nos_hook: copy {} aside failed: {}\n",
-                                 hook_file, ec.message());
-    }
-
-    const auto cmd = std::format("{} {}", hook_file, phase);
-    const int raw = std::system(cmd.c_str()); // NOLINT(cert-env33-c)
-    const int retval = (raw != -1 && WIFEXITED(raw)) ? WEXITSTATUS(raw) : raw;
-
-    hw_mgmt_write_config(std::format("fixup-status-{}", phase),
-                         std::to_string(retval));
-
-    if (retval == 0)
-    {
-        std::cerr << std::format(
-            "run_nos_hook: '{}' executed successfully with parameter {}\n",
-            hook_file, phase);
-    }
-    else
-    {
-        std::cerr << std::format("run_nos_hook: execution of '{}' with "
-                                 "parameter {} failed with return value {}\n",
-                                 hook_file, phase, retval);
-    }
-}
-
 std::string platform_feature(std::string_view key, std::string_view path)
 {
     std::ifstream conf{std::string{path}};

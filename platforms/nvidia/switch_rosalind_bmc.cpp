@@ -528,95 +528,87 @@ int init_switch_rosalind_bmc()
 
     std::cerr << "switch-rosalind-bmc: platform init start\n";
 
-    // First: a pre hook may rewrite bootargs and reboot the BMC.
-    run_nos_hook("pre");
+    sysfs_gpio_apply(rosalind_sysfs_gpios);
 
+    hw_mgmt_wait_system_tree("switch-rosalind-bmc");
+
+    hw_mgmt_link_gpio(rosalind_sysfs_gpios);
+
+    rosalind_init_usb_smbus_bridge();
+
+    const bool cpu_off = hw_mgmt_take_i2c_when_cpu_off(rosalind_mlxreg_io_hwmon,
+                                                       "switch-rosalind-bmc");
+
+    if (uboot_env_get("leak_rj45_en") == "1")
     {
-        NosHookGuard nos_hook;
-
-        sysfs_gpio_apply(rosalind_sysfs_gpios);
-
-        hw_mgmt_wait_system_tree("switch-rosalind-bmc");
-
-        hw_mgmt_link_gpio(rosalind_sysfs_gpios);
-
-        rosalind_init_usb_smbus_bridge();
-
-        const bool cpu_off = hw_mgmt_take_i2c_when_cpu_off(
-            rosalind_mlxreg_io_hwmon, "switch-rosalind-bmc");
-
-        if (uboot_env_get("leak_rj45_en") == "1")
+        static constexpr std::array<uint8_t, 3> leakage_conn_en{
+            static_cast<uint8_t>(rosalind_leakage_conn_en_reg >> 8),
+            static_cast<uint8_t>(rosalind_leakage_conn_en_reg & 0xff),
+            rosalind_leakage_conn_en_on};
+        if (const int rc = i2c::raw_transfer(
+                rosalind_leak_cpld_bus, rosalind_leak_cpld_addr,
+                leakage_conn_en, std::span<uint8_t>{});
+            rc != 0)
         {
-            static constexpr std::array<uint8_t, 3> leakage_conn_en{
-                static_cast<uint8_t>(rosalind_leakage_conn_en_reg >> 8),
-                static_cast<uint8_t>(rosalind_leakage_conn_en_reg & 0xff),
-                rosalind_leakage_conn_en_on};
-            if (const int rc = i2c::raw_transfer(
-                    rosalind_leak_cpld_bus, rosalind_leak_cpld_addr,
-                    leakage_conn_en, std::span<uint8_t>{});
-                rc != 0)
-            {
-                std::cerr << std::format("switch-rosalind-bmc: leakage_conn_en "
-                                         "write failed: {}\n",
-                                         std::strerror(rc));
-            }
+            std::cerr << std::format("switch-rosalind-bmc: leakage_conn_en "
+                                     "write failed: {}\n",
+                                     std::strerror(rc));
         }
+    }
 
-        // A timeout here is not fatal.
-        wait_sysfs_value(sysfs_gpio_value_path(rosalind_gpio_stby_pg), "1", 10,
-                         1000ms);
+    // A timeout here is not fatal.
+    wait_sysfs_value(sysfs_gpio_value_path(rosalind_gpio_stby_pg), "1", 10,
+                     1000ms);
 
-        write_cpu_type("switch-rosalind-bmc");
+    write_cpu_type("switch-rosalind-bmc");
 
-        const auto hid =
-            vpd_read_field(rosalind_vpd_eeprom, rosalind_vpd_hid_offset,
-                           rosalind_vpd_hid_size);
-        std::cerr << std::format("switch-rosalind-bmc: system hardware Id is "
-                                 "{}\n",
-                                 hid);
-        hw_mgmt_write_config("hid", hid);
+    const auto hid = vpd_read_field(
+        rosalind_vpd_eeprom, rosalind_vpd_hid_offset, rosalind_vpd_hid_size);
+    std::cerr << std::format("switch-rosalind-bmc: system hardware Id is "
+                             "{}\n",
+                             hid);
+    hw_mgmt_write_config("hid", hid);
 
-        if (const auto bom =
-                vpd_read_bom(rosalind_vpd_eeprom, hid, rosalind_bom_hids,
-                             rosalind_vpd_bom_offset, rosalind_vpd_bom_size);
-            !bom.empty())
-        {
-            std::cerr << std::format("switch-rosalind-bmc: system hardware BOM "
-                                     "record is {}\n",
-                                     bom);
-            hw_mgmt_write_config("bom", bom);
-        }
+    if (const auto bom =
+            vpd_read_bom(rosalind_vpd_eeprom, hid, rosalind_bom_hids,
+                         rosalind_vpd_bom_offset, rosalind_vpd_bom_size);
+        !bom.empty())
+    {
+        std::cerr << std::format("switch-rosalind-bmc: system hardware BOM "
+                                 "record is {}\n",
+                                 bom);
+        hw_mgmt_write_config("bom", bom);
+    }
 
-        write_system_hw_rev(rosalind_vpd_eeprom, hid, rosalind_bom_hids,
-                            "switch-rosalind-bmc");
+    write_system_hw_rev(rosalind_vpd_eeprom, hid, rosalind_bom_hids,
+                        "switch-rosalind-bmc");
 
-        if (cpu_off && fru_sync_cartridge_to_cpld(rosalind_cartridge_1,
-                                                  rosalind_cartridge_1_cpld) !=
-                           EXIT_SUCCESS)
-        {
-            std::cerr << "switch-rosalind-bmc: cartridge CPLD sync failed; "
-                         "continuing to power CPU\n";
-        }
+    if (cpu_off &&
+        fru_sync_cartridge_to_cpld(rosalind_cartridge_1,
+                                   rosalind_cartridge_1_cpld) != EXIT_SUCCESS)
+    {
+        std::cerr << "switch-rosalind-bmc: cartridge CPLD sync failed; "
+                     "continuing to power CPU\n";
+    }
 
-        shell_out("a2d_leakage_config.sh", "switch-rosalind-bmc");
+    shell_out("a2d_leakage_config.sh", "switch-rosalind-bmc");
 
-        if (filesystem_check_mtd() != EXIT_SUCCESS)
-        {
-            std::cerr << "switch-rosalind-bmc: FATAL: filesystem check "
-                         "failed\n";
-            return EXIT_FAILURE;
-        }
+    if (filesystem_check_mtd() != EXIT_SUCCESS)
+    {
+        std::cerr << "switch-rosalind-bmc: FATAL: filesystem check "
+                     "failed\n";
+        return EXIT_FAILURE;
+    }
 
-        // enable_write_protect_on_boot.service sets it again later.
-        std::cerr << "switch-rosalind-bmc: disabling write protect to allow "
-                     "the background copy\n";
-        // Not fatal: the copy then runs with write protect as it was.
-        if (!dbus_set_write_protect_init(
-                "/xyz/openbmc_project/software/Chassis_0", false))
-        {
-            std::cerr << "switch-rosalind-bmc: write protect left unchanged; "
-                         "continuing\n";
-        }
+    // enable_write_protect_on_boot.service sets it again later.
+    std::cerr << "switch-rosalind-bmc: disabling write protect to allow "
+                 "the background copy\n";
+    // Not fatal: the copy then runs with write protect as it was.
+    if (!dbus_set_write_protect_init("/xyz/openbmc_project/software/Chassis_0",
+                                     false))
+    {
+        std::cerr << "switch-rosalind-bmc: write protect left unchanged; "
+                     "continuing\n";
     }
 
     hw_mgmt_boot_start(rosalind_cartridge_boards, rosalind_decode_cpu_types);

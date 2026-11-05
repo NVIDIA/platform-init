@@ -130,77 +130,70 @@ int init_switch_spc6_ast2600_bmc()
 
     std::cerr << "switch-spc6-ast2600-bmc: platform init start\n";
 
-    run_nos_hook("pre");
-
     // The recovery slave first: the recovery path needs it most when a later
     // step fails.
     switch_misc::i2c_slave_setup_if_configured();
 
+    // HID first: it picks offset 12's role in the GPIO setup.
+    const auto hid = vpd_read_field(
+        spc6_2600_vpd_eeprom, spc6_2600_vpd_hid_offset, spc6_2600_vpd_hid_size);
+    std::cerr << std::format("switch-spc6-ast2600-bmc: system hardware Id "
+                             "is {}\n",
+                             hid);
+    hw_mgmt_write_config("hid", hid);
+
+    std::string stby_ready;
+    const auto pins = spc6_2600_gpio_pins(hid, stby_ready);
+    sysfs_gpio_apply(pins);
+
+    hw_mgmt_wait_system_tree("switch-spc6-ast2600-bmc");
+
+    hw_mgmt_link_gpio(pins);
+    std::cerr << "switch-spc6-ast2600-bmc: GPIO sysfs initialization "
+                 "complete\n";
+
+    const bool cpu_off = hw_mgmt_take_i2c_when_cpu_off(
+        spc6_2600_mlxreg_io_hwmon, "switch-spc6-ast2600-bmc");
+
+    // A timeout here is not fatal.
+    if (!stby_ready.empty())
     {
-        NosHookGuard nos_hook;
-
-        // HID first: it picks offset 12's role in the GPIO setup.
-        const auto hid =
-            vpd_read_field(spc6_2600_vpd_eeprom, spc6_2600_vpd_hid_offset,
-                           spc6_2600_vpd_hid_size);
-        std::cerr << std::format("switch-spc6-ast2600-bmc: system hardware Id "
-                                 "is {}\n",
-                                 hid);
-        hw_mgmt_write_config("hid", hid);
-
-        std::string stby_ready;
-        const auto pins = spc6_2600_gpio_pins(hid, stby_ready);
-        sysfs_gpio_apply(pins);
-
-        hw_mgmt_wait_system_tree("switch-spc6-ast2600-bmc");
-
-        hw_mgmt_link_gpio(pins);
-        std::cerr << "switch-spc6-ast2600-bmc: GPIO sysfs initialization "
-                     "complete\n";
-
-        const bool cpu_off = hw_mgmt_take_i2c_when_cpu_off(
-            spc6_2600_mlxreg_io_hwmon, "switch-spc6-ast2600-bmc");
-
-        // A timeout here is not fatal.
-        if (!stby_ready.empty())
-        {
-            wait_sysfs_value(stby_ready, "1", 10, 1000ms);
-        }
-
-        write_cpu_type("switch-spc6-ast2600-bmc");
-
-        // The BOM offset is not fixed; vpd_read_bom() scans for it.
-        if (const auto bom =
-                vpd_read_bom(spc6_2600_vpd_eeprom, hid, spc6_2600_bom_hids,
-                             std::nullopt, spc6_2600_vpd_bom_size);
-            !bom.empty())
-        {
-            std::cerr << std::format("switch-spc6-ast2600-bmc: system hardware "
-                                     "BOM record is {}\n",
-                                     bom);
-            hw_mgmt_write_config("bom", bom);
-        }
-
-        write_system_hw_rev(spc6_2600_vpd_eeprom, hid, spc6_2600_bom_hids,
-                            "switch-spc6-ast2600-bmc");
-
-        shell_out("a2d_leakage_config.sh", "switch-spc6-ast2600-bmc");
-
-        if (filesystem_check_mtd() != EXIT_SUCCESS)
-        {
-            std::cerr << "switch-spc6-ast2600-bmc: FATAL: filesystem check "
-                         "failed\n";
-            return EXIT_FAILURE;
-        }
-
-        // With the CPU off, I3C is bound on CPU reset deassert instead.
-        if (!cpu_off)
-        {
-            bind_i3c_controller();
-        }
-
-        unset_write_protect_on_boot();
+        wait_sysfs_value(stby_ready, "1", 10, 1000ms);
     }
+
+    write_cpu_type("switch-spc6-ast2600-bmc");
+
+    // The BOM offset is not fixed; vpd_read_bom() scans for it.
+    if (const auto bom =
+            vpd_read_bom(spc6_2600_vpd_eeprom, hid, spc6_2600_bom_hids,
+                         std::nullopt, spc6_2600_vpd_bom_size);
+        !bom.empty())
+    {
+        std::cerr << std::format("switch-spc6-ast2600-bmc: system hardware "
+                                 "BOM record is {}\n",
+                                 bom);
+        hw_mgmt_write_config("bom", bom);
+    }
+
+    write_system_hw_rev(spc6_2600_vpd_eeprom, hid, spc6_2600_bom_hids,
+                        "switch-spc6-ast2600-bmc");
+
+    shell_out("a2d_leakage_config.sh", "switch-spc6-ast2600-bmc");
+
+    if (filesystem_check_mtd() != EXIT_SUCCESS)
+    {
+        std::cerr << "switch-spc6-ast2600-bmc: FATAL: filesystem check "
+                     "failed\n";
+        return EXIT_FAILURE;
+    }
+
+    // With the CPU off, I3C is bound on CPU reset deassert instead.
+    if (!cpu_off)
+    {
+        bind_i3c_controller();
+    }
+
+    unset_write_protect_on_boot();
 
     hw_mgmt_boot_start(spc6_2600_cartridge_boards, spc6_2600_decode_cpu_types);
 

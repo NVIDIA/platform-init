@@ -140,25 +140,6 @@ int modprobe_with_timeout(
 // /proc/modules uses underscores, so compare normalised names.
 bool module_loaded(std::string_view module);
 
-// Runs the NOS-provided fixup script for this phase and publishes status.
-void run_nos_hook(
-    std::string_view phase,
-    std::string_view hook_file = "/usr/local/bin/hw-management-bmc-fixup.sh");
-
-// Scope to the bmc_init block: init functions end in pause().
-struct NosHookGuard
-{
-    NosHookGuard() = default;
-    NosHookGuard(const NosHookGuard&) = delete;
-    NosHookGuard& operator=(const NosHookGuard&) = delete;
-    NosHookGuard(NosHookGuard&&) = delete;
-    NosHookGuard& operator=(NosHookGuard&&) = delete;
-    ~NosHookGuard()
-    {
-        run_nos_hook("post");
-    }
-};
-
 // Read as key=value, not sourced; missing means most conservative mode.
 std::string platform_feature(
     std::string_view key,

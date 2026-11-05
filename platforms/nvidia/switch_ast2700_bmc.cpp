@@ -921,117 +921,110 @@ int init_switch_ast2700_bmc()
 
     std::cerr << "switch-ast2700-bmc: platform init start\n";
 
-    run_nos_hook("pre");
-
     // The recovery slave first: the recovery path needs it most when a later
     // step fails.
     switch_misc::i2c_slave_setup_if_configured();
 
+    const auto gpio_config = load_gpio_pin_config().value_or(GpioPinConfig{});
+    sysfs_gpio_apply(gpio_config.pins);
+
+    // Both no-ops unless the active HID's platform_features.conf asks for
+    // them. They must precede the wait below: the system tree appears only
+    // once the platform driver binds.
+    ast2700_wait_cpld_ready();
+    ast2700_load_platform_driver();
+
+    hw_mgmt_wait_system_tree("switch-ast2700-bmc");
+
+    hw_mgmt_link_gpio(gpio_config.pins);
+    std::cerr << "switch-ast2700-bmc: GPIO sysfs initialization "
+                 "complete\n";
+
+    const bool cpu_off = hw_mgmt_take_i2c_when_cpu_off(ast2700_mlxreg_io_hwmon,
+                                                       "switch-ast2700-bmc");
+
+    // A timeout here is not fatal.
+    if (!gpio_config.bmc_stby_ready.empty())
     {
-        NosHookGuard nos_hook;
-
-        const auto gpio_config =
-            load_gpio_pin_config().value_or(GpioPinConfig{});
-        sysfs_gpio_apply(gpio_config.pins);
-
-        // Both no-ops unless the active HID's platform_features.conf asks for
-        // them. They must precede the wait below: the system tree appears only
-        // once the platform driver binds.
-        ast2700_wait_cpld_ready();
-        ast2700_load_platform_driver();
-
-        hw_mgmt_wait_system_tree("switch-ast2700-bmc");
-
-        hw_mgmt_link_gpio(gpio_config.pins);
-        std::cerr << "switch-ast2700-bmc: GPIO sysfs initialization "
-                     "complete\n";
-
-        const bool cpu_off = hw_mgmt_take_i2c_when_cpu_off(
-            ast2700_mlxreg_io_hwmon, "switch-ast2700-bmc");
-
-        // A timeout here is not fatal.
-        if (!gpio_config.bmc_stby_ready.empty())
-        {
-            wait_sysfs_value(gpio_config.bmc_stby_ready, "1", 10, 1000ms);
-        }
-
-        write_cpu_type("switch-ast2700-bmc");
-
-        const auto hw_id = ast2700_read_hw_id();
-        if (!hw_id.value.empty())
-        {
-            std::cerr << std::format("switch-ast2700-bmc: system hardware Id "
-                                     "is {}\n",
-                                     hw_id.value);
-            hw_mgmt_write_config("hid", hw_id.value);
-        }
-
-        if (const auto bom =
-                vpd_read_bom(ast2700_vpd_eeprom, hw_id.value, ast2700_bom_hids,
-                             std::nullopt, ast2700_vpd_bom_size);
-            !bom.empty())
-        {
-            std::cerr << std::format("switch-ast2700-bmc: system hardware BOM "
-                                     "record is {}\n",
-                                     bom);
-            hw_mgmt_write_config("bom", bom);
-        }
-
-        if (hw_id.from_dt_fallback)
-        {
-            std::cerr << "switch-ast2700-bmc: skipping rev_id; HID came from "
-                         "the temporary HID197 device-tree fallback\n";
-        }
-        else
-        {
-            write_system_hw_rev(ast2700_vpd_eeprom, hw_id.value,
-                                ast2700_bom_hids, "switch-ast2700-bmc");
-        }
-
-        // Only while the host CPU is not driving the I2C tree.
-        if (cpu_off && std::filesystem::exists(ast2700_cartridge_config))
-        {
-            ast2700_copy_cartridge_data(std::string{ast2700_cartridge_config});
-        }
-
-        // MCU_RESET_ON_BOOT=no keeps the MCUs running: on VRU they control the
-        // CPLDs, and a reset would re-stream them under the platform driver.
-        if (platform_feature("MCU_RESET_ON_BOOT") == "no")
-        {
-            std::cerr << "switch-ast2700-bmc: MCU_RESET_ON_BOOT=no, leaving "
-                         "the MCUs running\n";
-        }
-        else
-        {
-            hw_mgmt_mcu_reset();
-        }
-
-        const auto leakSource = platform_feature("LEAK_DETECTION_SOURCE");
-        if (leakSource == "mcu")
-        {
-            std::cerr << "switch-ast2700-bmc: leak detection comes from the "
-                         "MCU, skipping A2D configuration\n";
-        }
-        else if (leakSource == "none")
-        {
-            std::cerr << "switch-ast2700-bmc: no leak detectors on this "
-                         "platform, skipping A2D configuration\n";
-        }
-        else
-        {
-            shell_out("a2d_leakage_config.sh", "switch-ast2700-bmc");
-        }
-
-        // eMMC-backed, unlike the other switch machines.
-        if (filesystem_check() != EXIT_SUCCESS)
-        {
-            std::cerr << "switch-ast2700-bmc: FATAL: filesystem check "
-                         "failed\n";
-            return EXIT_FAILURE;
-        }
-
-        unset_write_protect_on_boot();
+        wait_sysfs_value(gpio_config.bmc_stby_ready, "1", 10, 1000ms);
     }
+
+    write_cpu_type("switch-ast2700-bmc");
+
+    const auto hw_id = ast2700_read_hw_id();
+    if (!hw_id.value.empty())
+    {
+        std::cerr << std::format("switch-ast2700-bmc: system hardware Id "
+                                 "is {}\n",
+                                 hw_id.value);
+        hw_mgmt_write_config("hid", hw_id.value);
+    }
+
+    if (const auto bom =
+            vpd_read_bom(ast2700_vpd_eeprom, hw_id.value, ast2700_bom_hids,
+                         std::nullopt, ast2700_vpd_bom_size);
+        !bom.empty())
+    {
+        std::cerr << std::format("switch-ast2700-bmc: system hardware BOM "
+                                 "record is {}\n",
+                                 bom);
+        hw_mgmt_write_config("bom", bom);
+    }
+
+    if (hw_id.from_dt_fallback)
+    {
+        std::cerr << "switch-ast2700-bmc: skipping rev_id; HID came from "
+                     "the temporary HID197 device-tree fallback\n";
+    }
+    else
+    {
+        write_system_hw_rev(ast2700_vpd_eeprom, hw_id.value, ast2700_bom_hids,
+                            "switch-ast2700-bmc");
+    }
+
+    // Only while the host CPU is not driving the I2C tree.
+    if (cpu_off && std::filesystem::exists(ast2700_cartridge_config))
+    {
+        ast2700_copy_cartridge_data(std::string{ast2700_cartridge_config});
+    }
+
+    // MCU_RESET_ON_BOOT=no keeps the MCUs running: on VRU they control the
+    // CPLDs, and a reset would re-stream them under the platform driver.
+    if (platform_feature("MCU_RESET_ON_BOOT") == "no")
+    {
+        std::cerr << "switch-ast2700-bmc: MCU_RESET_ON_BOOT=no, leaving "
+                     "the MCUs running\n";
+    }
+    else
+    {
+        hw_mgmt_mcu_reset();
+    }
+
+    const auto leakSource = platform_feature("LEAK_DETECTION_SOURCE");
+    if (leakSource == "mcu")
+    {
+        std::cerr << "switch-ast2700-bmc: leak detection comes from the "
+                     "MCU, skipping A2D configuration\n";
+    }
+    else if (leakSource == "none")
+    {
+        std::cerr << "switch-ast2700-bmc: no leak detectors on this "
+                     "platform, skipping A2D configuration\n";
+    }
+    else
+    {
+        shell_out("a2d_leakage_config.sh", "switch-ast2700-bmc");
+    }
+
+    // eMMC-backed, unlike the other switch machines.
+    if (filesystem_check() != EXIT_SUCCESS)
+    {
+        std::cerr << "switch-ast2700-bmc: FATAL: filesystem check "
+                     "failed\n";
+        return EXIT_FAILURE;
+    }
+
+    unset_write_protect_on_boot();
 
     hw_mgmt_boot_start({}, ast2700_decode_cpu_types);
 
