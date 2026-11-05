@@ -142,6 +142,31 @@ void uboot_env_set(std::string_view key, std::string_view value)
     }
 }
 
+bool rwfs_usable(std::string_view rwfs_mount, std::string_view work_path)
+{
+    if (!detail::is_mounted(rwfs_mount))
+    {
+        std::cerr << std::format("rwfs_usable: RWFS not mounted at {}\n",
+                                 rwfs_mount);
+        return false;
+    }
+
+    // ROFS: no space to create the work dir.
+    const std::filesystem::path work{work_path};
+    if (std::filesystem::is_directory(work))
+    {
+        std::error_code ec;
+        std::filesystem::create_directory(work / "work", ec);
+        if (ec)
+        {
+            std::cerr << "rwfs_usable: no space on RWFS — read-only mode; "
+                         "factory reset required\n";
+            return false;
+        }
+    }
+    return true;
+}
+
 int filesystem_check(std::string_view rwfs_mount, std::string_view work_path)
 {
     using namespace std::chrono_literals;
@@ -196,18 +221,9 @@ int filesystem_check(std::string_view rwfs_mount, std::string_view work_path)
         return EXIT_FAILURE; // unreachable
     }
 
-    // ROFS: no space to create the work dir.
-    const std::filesystem::path work{work_path};
-    if (std::filesystem::is_directory(work))
+    if (!rwfs_usable(rwfs_mount, work_path))
     {
-        std::error_code ec;
-        std::filesystem::create_directory(work / "work", ec);
-        if (ec)
-        {
-            std::cerr << "filesystem_check: no space on RWFS — read-only mode; "
-                         "factory reset required\n";
-            return EXIT_FAILURE;
-        }
+        return EXIT_FAILURE;
     }
 
     std::cerr << "filesystem_check: RWFS OK\n";

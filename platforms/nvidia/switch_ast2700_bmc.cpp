@@ -1000,8 +1000,9 @@ int init_switch_ast2700_bmc()
         hw_mgmt_mcu_reset();
     }
 
-    // eMMC-backed, unlike the other switch machines.
-    if (filesystem_check() != EXIT_SUCCESS)
+    // nvidia-emmc-monitor reboots to recover a missing RWFS; stop here
+    // meanwhile, as when it runs out of attempts.
+    if (!rwfs_usable())
     {
         std::cerr << "switch-ast2700-bmc: FATAL: filesystem check "
                      "failed\n";

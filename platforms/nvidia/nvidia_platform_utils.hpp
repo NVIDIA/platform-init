@@ -91,6 +91,10 @@ std::string uboot_env_get(std::string_view key);
 // An empty value unsets the variable, matching `fw_setenv <key>`.
 void uboot_env_set(std::string_view key, std::string_view value = {});
 
+// RWFS mounted, with room for its overlay work dir.
+bool rwfs_usable(std::string_view rwfs_mount = "/run/initramfs/rw",
+                 std::string_view work_path = "/run/initramfs/rw/work");
+
 int filesystem_check(std::string_view rwfs_mount = "/run/initramfs/rw",
                      std::string_view work_path = "/run/initramfs/rw/work");
 
