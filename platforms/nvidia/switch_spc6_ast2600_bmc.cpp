@@ -158,8 +158,6 @@ int init_switch_spc6_ast2600_bmc()
         std::cerr << "switch-spc6-ast2600-bmc: GPIO sysfs initialization "
                      "complete\n";
 
-        bmc_init_bootargs();
-
         const bool cpu_off = hw_mgmt_take_i2c_when_cpu_off(
             spc6_2600_mlxreg_io_hwmon, "switch-spc6-ast2600-bmc");
 

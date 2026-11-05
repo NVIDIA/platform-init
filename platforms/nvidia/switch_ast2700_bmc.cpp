@@ -516,29 +516,6 @@ static Ast2700HwId ast2700_read_hw_id()
     return {.value = std::move(vpd)};
 }
 
-// Unlike bmc_init_bootargs(), leaves the console setting alone.
-static void ast2700_init_bootargs()
-{
-    static constexpr std::string_view ether_host_addr = "46:44:8a:c8:7f:bf";
-    static constexpr std::string_view ether_dev_addr = "46:44:8a:c8:7f:bd";
-
-    const auto bootargs = uboot_env_get("bootargs");
-    if (bootargs.contains(std::format("g_ether.host_addr={}", ether_host_addr)))
-    {
-        std::cerr << std::format("switch-ast2700-bmc: g_ether MAC in bootargs "
-                                 "already set to {}\n",
-                                 ether_host_addr);
-        return;
-    }
-
-    std::cerr << std::format("switch-ast2700-bmc: setting g_ether MAC in "
-                             "bootargs ({})\n",
-                             bootargs);
-    uboot_env_set("bootargs",
-                  std::format("{} g_ether.host_addr={} g_ether.dev_addr={}",
-                              bootargs, ether_host_addr, ether_dev_addr));
-}
-
 // ARMv7_CPU and ARMv8_CPU as spelled in this machine's helpers copy.
 constexpr std::array<std::string_view, 2> ast2700_decode_cpu_types{
     "0xC07", "0xD04"};
@@ -968,8 +945,6 @@ int init_switch_ast2700_bmc()
         hw_mgmt_link_gpio(gpio_config.pins);
         std::cerr << "switch-ast2700-bmc: GPIO sysfs initialization "
                      "complete\n";
-
-        ast2700_init_bootargs();
 
         const bool cpu_off = hw_mgmt_take_i2c_when_cpu_off(
             ast2700_mlxreg_io_hwmon, "switch-ast2700-bmc");

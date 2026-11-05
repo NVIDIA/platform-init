@@ -32,9 +32,6 @@ std::string first_word(std::span<const uint8_t> raw);
 
 } // namespace detail
 
-// ttyS2 + host MAC means the env was already rewritten.
-void bmc_init_bootargs();
-
 void shell_out(std::string_view cmd, std::string_view log_prefix);
 
 // The hwmon instance number is not stable across boots; resolve the glob.

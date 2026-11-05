@@ -75,19 +75,6 @@ std::string first_word(std::span<const uint8_t> raw)
 
 } // namespace detail
 
-void bmc_init_bootargs()
-{
-    const auto bootargs = uboot_env_get("bootargs");
-    if (bootargs.contains("ttyS2") && bootargs.contains("46:44:8a:c8:7f:bf"))
-    {
-        return;
-    }
-
-    uboot_env_set("bootargs", "console=ttyS2,115200n8 root=/dev/ram rw "
-                              "g_ether.host_addr=46:44:8a:c8:7f:bf "
-                              "g_ether.dev_addr=46:44:8a:c8:7f:bd");
-}
-
 void shell_out(std::string_view cmd, std::string_view log_prefix)
 {
     const std::string command{cmd};

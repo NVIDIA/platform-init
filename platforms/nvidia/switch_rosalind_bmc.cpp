@@ -541,7 +541,6 @@ int init_switch_rosalind_bmc()
         hw_mgmt_link_gpio(rosalind_sysfs_gpios);
 
         rosalind_init_usb_smbus_bridge();
-        bmc_init_bootargs();
 
         const bool cpu_off = hw_mgmt_take_i2c_when_cpu_off(
             rosalind_mlxreg_io_hwmon, "switch-rosalind-bmc");
