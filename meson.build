@@ -121,21 +121,6 @@ configure_file(
 
 script_base = 'platforms/nvidia/scripts/platforms'
 
-# Replaces bmc-plat-specific-preps.sh under the same unit name.
-if platform_name in [
-    'nvidia-switch-ast2700-bmc',
-    'nvidia-switch-rosalind-bmc',
-    'nvidia-switch-spc6-ast2600-bmc',
-]
-    configure_file(
-        input: 'bmc-plat-specific-preps.service.in',
-        output: 'bmc-plat-specific-preps.service',
-        install_dir: systemd_system_unit_dir,
-        install: true,
-        configuration: configuration_data({'PLATFORM_NAME': platform_name}),
-    )
-endif
-
 if get_option('tests').allowed()
     preps_gtest = dependency(
         'gtest',
