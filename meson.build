@@ -31,7 +31,6 @@ platform_srcs = files(
     'platforms/nvidia/nvl32.cpp',
     'platforms/nvidia/switch_ast2700_bmc.cpp',
     'platforms/nvidia/switch_common.cpp',
-    'platforms/nvidia/switch_mctp.cpp',
     'platforms/nvidia/switch_mcu.cpp',
     'platforms/nvidia/switch_misc.cpp',
     'platforms/nvidia/switch_preps.cpp',
@@ -191,9 +190,7 @@ if get_option('tests').allowed()
             executable(
                 'test-switch-mcu',
                 'test/test-switch-mcu.cpp',
-                'test/test-switch-mctp.cpp',
                 'platforms/nvidia/switch_mcu.cpp',
-                'platforms/nvidia/switch_mctp.cpp',
                 'platforms/nvidia/switch_common.cpp',
                 'platforms/nvidia/nvidia_platform_utils.cpp',
                 util_srcs,

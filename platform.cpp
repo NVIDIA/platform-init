@@ -5,7 +5,6 @@
 #include "i2c.hpp"
 #include "intel/platforms.hpp"
 #include "nvidia/platforms.hpp"
-#include "nvidia/switch_mctp.hpp"
 #include "nvidia/switch_misc.hpp"
 #include "nvidia/switch_preps.hpp"
 #include "nvidia/switch_rtc.hpp"
@@ -59,8 +58,7 @@ constexpr auto init_functions = std::to_array<
       }},
      {"nvidia-switch-rtc-detect", nvidia::switch_rtc_detect},
      {"nvidia-switch-i2c-slave-setup",
-      [] { return nvidia::switch_misc::i2c_slave_setup(); }},
-     {"nvidia-switch-mctp-ready", [] { return nvidia::switch_mctp_ready(); }}});
+      [] { return nvidia::switch_misc::i2c_slave_setup(); }}});
 
 int main(int argc, char** argv)
 {
