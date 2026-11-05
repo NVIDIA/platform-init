@@ -100,8 +100,6 @@ configure_file(
     configuration: configuration_data({'PLATFORM_NAME': platform_name}),
 )
 
-script_base = 'platforms/nvidia/scripts/platforms'
-
 if get_option('tests').allowed()
     preps_gtest = dependency(
         'gtest',
