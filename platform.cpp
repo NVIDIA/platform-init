@@ -48,10 +48,7 @@ constexpr auto init_functions = std::to_array<
      {"nvidia-switch-rosalind-bmc", nvidia::init_switch_rosalind_bmc},
      {"nvidia-switch-spc6-ast2600-bmc", nvidia::init_switch_spc6_ast2600_bmc},
      {"nvidia-switch-ast2700-bmc", nvidia::init_switch_ast2700_bmc},
-     // Boot stages run by their own units: "<platform>-early" before
-     // sysinit.target, "<platform>-preps" before udev.
-     {"nvidia-vr-nvl-hmc-early", nvidia::early_init_vr_nvl_hmc},
-     {"nvidia-vr-nvl-hmc-ast2700-early", nvidia::early_init_vr_nvl_hmc_ast2700},
+     // Boot stages run by their own units: "<platform>-preps" before udev.
      {"nvidia-switch-ast2700-bmc-preps",
       [] { return nvidia::switch_plat_preps("nvidia-switch-ast2700-bmc"); }},
      {"nvidia-switch-rosalind-bmc-preps",

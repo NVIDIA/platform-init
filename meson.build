@@ -122,18 +122,6 @@ configure_file(
 
 script_base = 'platforms/nvidia/scripts/platforms'
 
-# Platforms with an early-init step: the standby wait and RTC sync their
-# initramfs ran.
-if platform_name in ['nvidia-vr-nvl-hmc', 'nvidia-vr-nvl-hmc-ast2700']
-    configure_file(
-        input: 'platform_early_init.service.in',
-        output: 'platform_early_init.service',
-        install_dir: systemd_system_unit_dir,
-        install: true,
-        configuration: configuration_data({'PLATFORM_NAME': platform_name}),
-    )
-endif
-
 # Replaces bmc-plat-specific-preps.sh under the same unit name.
 if platform_name in [
     'nvidia-switch-ast2700-bmc',

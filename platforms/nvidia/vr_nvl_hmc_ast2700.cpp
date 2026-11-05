@@ -52,20 +52,15 @@ static constexpr compute::RtcSync rtc_sync{.external = {rtc_buses, rtc_parts}};
 static constexpr auto hmc_ready_pin =
     "/sys/class/leds/hmc_ready_noled/brightness";
 
-// Before sysinit.target, as the initramfs ran it: the init's GPIO outputs
-// live on the expanders the wait binds.
-int early_init_vr_nvl_hmc_ast2700()
-{
-    static constexpr auto tag = "vr-nvl-hmc-ast2700";
-    compute::wait_for_standby_power(tag, standby);
-    compute::sync_clock_from_rtc(tag, rtc_sync);
-    return EXIT_SUCCESS;
-}
-
 int init_vr_nvl_hmc_ast2700()
 {
     static constexpr auto tag = "vr-nvl-hmc-ast2700";
     std::cerr << "vr-nvl-hmc-ast2700: platform init start\n";
+
+    // The init's GPIO outputs and the RTC sync's power-good input live on
+    // the expanders the standby wait binds.
+    compute::wait_for_standby_power(tag, standby);
+    compute::sync_clock_from_rtc(tag, rtc_sync);
 
     compute::create_state_dir();
 
