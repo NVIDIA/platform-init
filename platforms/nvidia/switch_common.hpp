@@ -143,10 +143,6 @@ std::string platform_feature(
     std::string_view key,
     std::string_view path = "/etc/platform_features.conf");
 
-// In unset_on_boot mode write protect is dropped once, never re-enabled.
-void unset_write_protect_on_boot(
-    std::string_view system_path = hw_mgmt_system_path);
-
 // No D-Bus Logging entry: phosphor-log-manager is not up this early.
 void phosphor_log_all(std::string_view message);
 

@@ -1008,8 +1008,6 @@ int init_switch_ast2700_bmc()
         return EXIT_FAILURE;
     }
 
-    unset_write_protect_on_boot();
-
     hw_mgmt_boot_start({}, ast2700_decode_cpu_types);
 
     sd_notify(0, "READY=1");

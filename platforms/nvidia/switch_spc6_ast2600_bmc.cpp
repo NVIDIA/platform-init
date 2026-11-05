@@ -57,7 +57,7 @@ static std::vector<SysfsGpioPin> spc6_2600_gpio_pins(std::string_view hid,
             {e + 3, SysfsGpioDir::Out, 1, "GP_BMC_PWR_CYCLE_3V3_MASK_L"});
         pins.push_back({e + 6, SysfsGpioDir::In, std::nullopt,
                         "SE_SOC_EROT_BOOT_COMPLETE"});
-        // Direction only; unset_write_protect_on_boot() sets the level.
+        // Direction only; write-protect-unset-on-boot.service sets the level.
         pins.push_back(
             {e + 7, SysfsGpioDir::Out, std::nullopt, "GP_BMC_WP_CTRL_GPIO_L"});
         // 0 gives JTAG access to the BIOS flashes; 1 only for recovery.
@@ -190,8 +190,6 @@ int init_switch_spc6_ast2600_bmc()
     {
         bind_i3c_controller();
     }
-
-    unset_write_protect_on_boot();
 
     hw_mgmt_boot_start(spc6_2600_cartridge_boards, spc6_2600_decode_cpu_types);
 

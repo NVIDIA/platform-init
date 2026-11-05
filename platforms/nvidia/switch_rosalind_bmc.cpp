@@ -463,31 +463,6 @@ static int fru_sync_cartridge_to_cpld(
     return EXIT_FAILURE;
 }
 
-static bool dbus_set_write_protect_init(std::string_view object_path,
-                                        bool value)
-{
-    try
-    {
-        auto bus = sdbusplus::bus::new_default_system();
-        auto m = bus.new_method_call(
-            "xyz.openbmc_project.Software.Settings",
-            std::string{object_path}.c_str(),
-            "xyz.openbmc_project.Software.Settings", "SetWriteProtectInit");
-        m.append(value);
-        bus.call(m);
-        std::cerr << std::format(
-            "dbus_set_write_protect_init: {} SetWriteProtectInit {}\n",
-            object_path, value);
-        return true;
-    }
-    catch (const std::exception& e)
-    {
-        std::cerr << std::format("dbus_set_write_protect_init: {}: {}\n",
-                                 object_path, e.what());
-        return false;
-    }
-}
-
 // Non-fatal: only ASIC firmware recovery over USB-SMBus needs it.
 static void rosalind_init_usb_smbus_bridge()
 {
@@ -596,17 +571,6 @@ int init_switch_rosalind_bmc()
         std::cerr << "switch-rosalind-bmc: FATAL: filesystem check "
                      "failed\n";
         return EXIT_FAILURE;
-    }
-
-    // enable_write_protect_on_boot.service sets it again later.
-    std::cerr << "switch-rosalind-bmc: disabling write protect to allow "
-                 "the background copy\n";
-    // Not fatal: the copy then runs with write protect as it was.
-    if (!dbus_set_write_protect_init("/xyz/openbmc_project/software/Chassis_0",
-                                     false))
-    {
-        std::cerr << "switch-rosalind-bmc: write protect left unchanged; "
-                     "continuing\n";
     }
 
     hw_mgmt_boot_start(rosalind_cartridge_boards, rosalind_decode_cpu_types);

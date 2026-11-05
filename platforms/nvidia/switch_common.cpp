@@ -781,26 +781,6 @@ std::string platform_feature(std::string_view key, std::string_view path)
     return value;
 }
 
-void unset_write_protect_on_boot(std::string_view system_path)
-{
-    if (platform_feature("WRITE_PROTECT_MODE") != "unset_on_boot")
-    {
-        return;
-    }
-
-    const auto wp_sysfs = std::format("{}/GP_BMC_WP_CTRL_GPIO_L", system_path);
-    if (!std::filesystem::exists(wp_sysfs))
-    {
-        std::cerr << "Write protect sysfs node is missing, not disabling "
-                     "write protect\n";
-        return;
-    }
-
-    std::cerr << "Disabling write protect, platform write protect mode is "
-                 "unset_on_boot.\n";
-    hw_mgmt_write(wp_sysfs, "1");
-}
-
 void phosphor_log_all(std::string_view message)
 {
     std::cerr << message << "\n";
