@@ -135,9 +135,6 @@ int modprobe_with_timeout(
     std::chrono::seconds timeout = std::chrono::seconds{5},
     bool ignore_install = false);
 
-// /proc/modules uses underscores, so compare normalised names.
-bool module_loaded(std::string_view module);
-
 // Read as key=value, not sourced; missing means most conservative mode.
 std::string platform_feature(
     std::string_view key,
@@ -145,10 +142,6 @@ std::string platform_feature(
 
 // No D-Bus Logging entry: phosphor-log-manager is not up this early.
 void phosphor_log_all(std::string_view message);
-
-bool i2c_mux_present();
-
-int bind_i3c_controller();
 
 // A (devicetree model word, HID) pair whose cable cartridge EEPROMs are
 // appended to the devtree file.

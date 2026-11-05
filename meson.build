@@ -114,12 +114,6 @@ emmc_partition_platforms = [
 ]
 subdir('emmc-partition')
 
-# Only spc6-ast2600-bmc sets BIND_I3C_ON_BIOS_BOOT=1; elsewhere the handler
-# defaults it to 0, so the unit would never be started.
-if platform_name.contains('spc6-ast2600')
-    subdir('bind-i3c')
-endif
-
 if get_option('tests').allowed()
     switch_gtest_dep = dependency(
         'gtest',

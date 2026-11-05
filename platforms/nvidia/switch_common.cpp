@@ -714,28 +714,6 @@ int modprobe_with_timeout(std::string_view module, std::chrono::seconds timeout,
     return status;
 }
 
-bool module_loaded(std::string_view module)
-{
-    const auto normalise = [](std::string_view name) {
-        std::string out{name};
-        std::ranges::replace(out, '-', '_');
-        return out;
-    };
-    const auto wanted = normalise(module);
-
-    std::ifstream f{"/proc/modules"};
-    std::string line;
-    while (std::getline(f, line))
-    {
-        const auto space = line.find(' ');
-        const auto name =
-            space == std::string::npos ? line : line.substr(0, space);
-        if (normalise(name) == wanted)
-            return true;
-    }
-    return false;
-}
-
 std::string platform_feature(std::string_view key, std::string_view path)
 {
     std::ifstream conf{std::string{path}};
@@ -791,76 +769,6 @@ void phosphor_log_all(std::string_view message)
         if (std::ofstream console{"/dev/console"}; console)
             console << std::format("\n{}\n\n", message);
     }
-}
-
-bool i2c_mux_present()
-{
-    std::error_code ec;
-    for (const auto& entry :
-         std::filesystem::directory_iterator{"/sys/class/i2c-dev", ec})
-    {
-        const auto name = detail::sysfs_read((entry.path() / "name").string());
-        if (name && name->find("mux") != std::string::npos)
-            return true;
-    }
-    return false;
-}
-
-int bind_i3c_controller()
-{
-    using namespace std::chrono_literals;
-
-    if (module_loaded("mipi-i3c-hci"))
-    {
-        std::cerr << "bind_i3c_controller: mipi-i3c-hci module already "
-                     "loaded\n";
-        return EXIT_SUCCESS;
-    }
-
-    // Wait for the i2c muxes first so I3C cannot perturb bus enumeration.
-    constexpr int mux_timeout_ms = 20000;
-    for (int elapsed_ms = 0;; elapsed_ms += 100)
-    {
-        if (i2c_mux_present())
-        {
-            // Mux adapters can appear before all of them are added.
-            std::this_thread::sleep_for(300ms);
-            break;
-        }
-        if (elapsed_ms >= mux_timeout_ms)
-        {
-            std::cerr << "bind_i3c_controller: timed out waiting for the i2c "
-                         "mux driver to complete initialization, loading the "
-                         "i3c drivers anyway\n";
-            break;
-        }
-        if (elapsed_ms % 1000 == 0)
-        {
-            std::cerr << std::format("bind_i3c_controller: waiting for the i2c "
-                                     "mux driver, {} ms passed\n",
-                                     elapsed_ms);
-        }
-        std::this_thread::sleep_for(100ms);
-    }
-
-    // Controller drivers must load before HCI and the char/MCTP devices.
-    static constexpr std::array<std::string_view, 6> i3c_modules{
-        "i3c",          "dw_i3c_master", "ast2600_i3c_master",
-        "mipi-i3c-hci", "i3cdev",        "mctp-i3c",
-    };
-    for (const auto module : i3c_modules)
-    {
-        if (modprobe_with_timeout(module, std::chrono::seconds{20}, true) != 0)
-        {
-            std::cerr << std::format("bind_i3c_controller: failed to load {} "
-                                     "module\n",
-                                     module);
-            return EXIT_FAILURE;
-        }
-    }
-
-    std::cerr << "bind_i3c_controller: I3C driver modules loaded\n";
-    return EXIT_SUCCESS;
 }
 
 } // namespace nvidia

@@ -152,8 +152,8 @@ int init_switch_spc6_ast2600_bmc()
     std::cerr << "switch-spc6-ast2600-bmc: GPIO sysfs initialization "
                  "complete\n";
 
-    const bool cpu_off = hw_mgmt_take_i2c_when_cpu_off(
-        spc6_2600_mlxreg_io_hwmon, "switch-spc6-ast2600-bmc");
+    hw_mgmt_take_i2c_when_cpu_off(spc6_2600_mlxreg_io_hwmon,
+                                  "switch-spc6-ast2600-bmc");
 
     // A timeout here is not fatal.
     if (!stby_ready.empty())
@@ -183,12 +183,6 @@ int init_switch_spc6_ast2600_bmc()
         std::cerr << "switch-spc6-ast2600-bmc: FATAL: filesystem check "
                      "failed\n";
         return EXIT_FAILURE;
-    }
-
-    // With the CPU off, I3C is bound on CPU reset deassert instead.
-    if (!cpu_off)
-    {
-        bind_i3c_controller();
     }
 
     hw_mgmt_boot_start(spc6_2600_cartridge_boards, spc6_2600_decode_cpu_types);
