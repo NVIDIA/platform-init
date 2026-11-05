@@ -9,6 +9,7 @@
 #include "i2c.hpp"
 #include "switch_common.hpp"
 #include "switch_mcu.hpp"
+#include "switch_misc.hpp"
 #include "utilities.hpp"
 
 #include <systemd/sd-daemon.h>
@@ -1018,6 +1019,10 @@ int init_switch_ast2700_bmc()
     std::cerr << "switch-ast2700-bmc: platform init start\n";
 
     run_nos_hook("pre");
+
+    // The recovery slave first: the recovery path needs it most when a later
+    // step fails.
+    switch_misc::i2c_slave_setup_if_configured();
 
     {
         NosHookGuard nos_hook;

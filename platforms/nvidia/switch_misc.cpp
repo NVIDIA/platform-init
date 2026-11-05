@@ -73,7 +73,8 @@ int i2c_slave_setup(const std::string& conf)
 
     const auto addr = std::format("10{:02x}", cfg->address);
     const auto dev = std::format("/sys/bus/i2c/devices/{}-{}", cfg->bus, addr);
-    if (std::filesystem::exists(dev))
+    std::error_code ec;
+    if (std::filesystem::exists(dev, ec))
     {
         std::cout << std::format("I2C slave device already exists on bus {}\n",
                                  cfg->bus);
@@ -92,7 +93,7 @@ int i2c_slave_setup(const std::string& conf)
     }
     nd.close();
 
-    if (std::filesystem::exists(dev + "/slave-eeprom"))
+    if (std::filesystem::exists(dev + "/slave-eeprom", ec))
     {
         std::cout << std::format(
             "I2C slave device created successfully: {}/slave-eeprom\n", dev);
@@ -101,6 +102,13 @@ int i2c_slave_setup(const std::string& conf)
     std::cout << std::format("ERROR: I2C slave device not created on bus {}\n",
                              cfg->bus);
     return 1;
+}
+
+void i2c_slave_setup_if_configured(const std::string& conf)
+{
+    std::error_code ec;
+    if (std::filesystem::exists(conf, ec) && i2c_slave_setup(conf) != 0)
+        std::cout << "I2C slave setup failed; continuing\n";
 }
 
 } // namespace nvidia::switch_misc

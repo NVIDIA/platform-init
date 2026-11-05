@@ -4,6 +4,7 @@
 // Platform init for spc6-ast2600-bmc.
 
 #include "switch_common.hpp"
+#include "switch_misc.hpp"
 #include "utilities.hpp"
 
 #include <systemd/sd-daemon.h>
@@ -132,6 +133,10 @@ int init_switch_spc6_ast2600_bmc()
     std::cerr << "switch-spc6-ast2600-bmc: platform init start\n";
 
     run_nos_hook("pre");
+
+    // The recovery slave first: the recovery path needs it most when a later
+    // step fails.
+    switch_misc::i2c_slave_setup_if_configured();
 
     {
         NosHookGuard nos_hook;

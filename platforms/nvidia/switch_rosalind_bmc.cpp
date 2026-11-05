@@ -4,6 +4,7 @@
 // Platform init for the Rosalind switch BMCs.
 
 #include "switch_common.hpp"
+#include "switch_misc.hpp"
 #include "utilities.hpp"
 
 #include <systemd/sd-daemon.h>
@@ -537,6 +538,10 @@ int init_switch_rosalind_bmc()
 
     // First: a pre hook may rewrite bootargs and reboot the BMC.
     run_nos_hook("pre");
+
+    // The recovery slave first: the recovery path needs it most when a later
+    // step fails.
+    switch_misc::i2c_slave_setup_if_configured();
 
     {
         NosHookGuard nos_hook;

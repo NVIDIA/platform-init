@@ -5,7 +5,6 @@
 #include "i2c.hpp"
 #include "intel/platforms.hpp"
 #include "nvidia/platforms.hpp"
-#include "nvidia/switch_misc.hpp"
 #include "nvidia/switch_preps.hpp"
 #include "utilities.hpp"
 
@@ -51,12 +50,9 @@ constexpr auto init_functions = std::to_array<
       [] { return nvidia::switch_plat_preps("nvidia-switch-ast2700-bmc"); }},
      {"nvidia-switch-rosalind-bmc-preps",
       [] { return nvidia::switch_plat_preps("nvidia-switch-rosalind-bmc"); }},
-     {"nvidia-switch-spc6-ast2600-bmc-preps",
-      [] {
+     {"nvidia-switch-spc6-ast2600-bmc-preps", [] {
           return nvidia::switch_plat_preps("nvidia-switch-spc6-ast2600-bmc");
-      }},
-     {"nvidia-switch-i2c-slave-setup",
-      [] { return nvidia::switch_misc::i2c_slave_setup(); }}});
+      }}});
 
 int main(int argc, char** argv)
 {
