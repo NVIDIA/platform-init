@@ -4,7 +4,6 @@
 // Platform init for the Rosalind switch BMCs.
 
 #include "switch_common.hpp"
-#include "switch_misc.hpp"
 #include "utilities.hpp"
 
 #include <systemd/sd-daemon.h>
@@ -77,11 +76,6 @@ static constexpr unsigned rosalind_leak_cpld_bus = 5;
 static constexpr uint8_t rosalind_leak_cpld_addr = 0x31;
 static constexpr uint16_t rosalind_leakage_conn_en_reg = 0x2539;
 static constexpr uint8_t rosalind_leakage_conn_en_on = 0x01;
-
-// Fallback; bmc-early-i2c-init.service normally creates this device.
-static constexpr std::array<EepromDevice, 1> rosalind_vpd_device{{
-    {4, 0x51, "24c512", "BMC VPD", false},
-}};
 
 // raw_transfer, not RawDevice: at24 and mlxreg-io own these devices.
 
@@ -516,10 +510,8 @@ static void rosalind_init_usb_smbus_bridge()
     }
 }
 
-// ARMv7_CPU and ARMv8_CPU as spelled in this machine's helpers copy;
-// 0xd04 never matches the 0xD04 platform-init writes.
-constexpr std::array<std::string_view, 2> rosalind_decode_cpu_types{
-    "0xC07", "0xd04"};
+// ARMv7_CPU as spelled in this machine's helpers copy.
+constexpr std::array<std::string_view, 1> rosalind_decode_cpu_types{"0xC07"};
 
 // Boards whose cable cartridge EEPROMs hw-management.sh start added.
 constexpr std::array<CartridgeBoard, 5> rosalind_cartridge_boards{{
@@ -538,10 +530,6 @@ int init_switch_rosalind_bmc()
 
     // First: a pre hook may rewrite bootargs and reboot the BMC.
     run_nos_hook("pre");
-
-    // The recovery slave first: the recovery path needs it most when a later
-    // step fails.
-    switch_misc::i2c_slave_setup_if_configured();
 
     {
         NosHookGuard nos_hook;
@@ -580,8 +568,6 @@ int init_switch_rosalind_bmc()
                          1000ms);
 
         write_cpu_type("switch-rosalind-bmc");
-
-        eeprom_init(rosalind_vpd_device);
 
         const auto hid =
             vpd_read_field(rosalind_vpd_eeprom, rosalind_vpd_hid_offset,
@@ -637,8 +623,6 @@ int init_switch_rosalind_bmc()
     hw_mgmt_boot_start(rosalind_cartridge_boards, rosalind_decode_cpu_types);
 
     sd_notify(0, "READY=1");
-
-    gpio::release_all();
 
     phosphor_log_all("platform init completed");
 

@@ -419,11 +419,6 @@ std::optional<int> sysfs_gpiochip_base_by_i2c(std::string_view i2c_id)
     return std::nullopt;
 }
 
-std::optional<int> sysfs_gpiochip_base_by_i2c(unsigned bus, unsigned address)
-{
-    return sysfs_gpiochip_base_by_i2c(std::format("{}-{:04x}", bus, address));
-}
-
 std::optional<int> sysfs_gpiochip_base_for_chip_id(std::string_view chip)
 {
     if (chip == "aspeed")
@@ -1194,9 +1189,7 @@ void hw_mgmt_boot_start(std::span<const CartridgeBoard> cartridge_boards,
 
     std::string devtree;
     const auto hid = read_trimmed_newlines(config + "/hid");
-    std::string json_path = "/etc/hw-management-cfg/devtree.json";
-    if (!std::filesystem::is_regular_file(json_path))
-        json_path = std::format("/etc/hw-management-cfg/{}/devtree.json", hid);
+    const std::string json_path = "/etc/hw-management-cfg/devtree.json";
     if (hid.empty())
         std::cerr << "SMBIOS BOM info: SKU is not available\n";
     else if (!std::filesystem::is_regular_file(json_path))

@@ -184,71 +184,6 @@ static std::optional<GpioPinConfig> load_gpio_pin_config(
     }
 }
 
-// For platforms that ship no pins JSON.
-static GpioPinConfig ast2700_gpio_pins_hardcoded()
-{
-    GpioPinConfig config;
-
-    // PCAL6524, 24 lines.
-    if (const auto base = sysfs_gpiochip_base_by_ngpio(24); base)
-    {
-        std::cerr << std::format("switch-ast2700-bmc: expander GPIO base {}\n",
-                                 *base);
-        const int e = *base;
-        config.pins.push_back(
-            {e + 1, SysfsGpioDir::In, std::nullopt, "GP_EROT_RST_IN_L"});
-        config.pins.push_back(
-            {e + 2, SysfsGpioDir::In, std::nullopt, "GP_3V3_BMC_PHY_PG"});
-        config.pins.push_back(
-            {e + 3, SysfsGpioDir::Out, 1, "GP_BMC_PWR_CYCLE_3V3_MASK_L"});
-        config.pins.push_back({e + 6, SysfsGpioDir::In, std::nullopt,
-                               "SE_SOC_EROT_BOOT_COMPLETE"});
-        // Direction only; unset_write_protect_on_boot() sets the level.
-        config.pins.push_back(
-            {e + 7, SysfsGpioDir::Out, std::nullopt, "GP_BMC_WP_CTRL_GPIO_L"});
-        // 0 gives JTAG access to the BIOS flashes; 1 only for recovery.
-        config.pins.push_back(
-            {e + 8, SysfsGpioDir::Out, 0, "GP_BMC_REC_SPI_MUX1_SEL"});
-        // Offset 10 (PHY reset) is driven from the DTS.
-        config.pins.push_back(
-            {e + 11, SysfsGpioDir::Out, 1, "GP_JTAG_BMC_CPLD_BURN_EN_L"});
-        config.pins.push_back(
-            {e + 12, SysfsGpioDir::In, std::nullopt, "GP_PWR_BANK_PRESENT_L"});
-        config.pins.push_back(
-            {e + 19, SysfsGpioDir::Out, 0, "GP_PROD_CS_FLASH0_EN"});
-        config.pins.push_back(
-            {e + 21, SysfsGpioDir::Out, 0, "GP_PROD_CS_FLASH1_EN"});
-    }
-    else
-    {
-        std::cerr << "switch-ast2700-bmc: failed to detect the GPIO expander "
-                     "base (ngpio=24)\n";
-    }
-
-    if (const auto base = sysfs_gpiochip_base_aspeed(); base)
-    {
-        std::cerr << std::format("switch-ast2700-bmc: Aspeed GPIO base {}\n",
-                                 *base);
-        const int a = *base;
-        config.pins.push_back(
-            {a + 34, SysfsGpioDir::In, std::nullopt, "GP_STBY_PG"}); // GPIOE2
-        config.pins.push_back(
-            {a + 40, SysfsGpioDir::Out, 1, "GP_BMC_FRU_WP"});        // GPIOF0
-        // GPIOS1: never driven; driving it can power-cycle the BMC.
-        config.pins.push_back({a + 145, SysfsGpioDir::Preserve, std::nullopt,
-                               "GP_BMC_PWR_CYCLE_BMC"});
-
-        config.bmc_stby_ready = sysfs_gpio_value_path(a + 34);
-    }
-    else
-    {
-        std::cerr << "switch-ast2700-bmc: failed to detect the Aspeed GPIO "
-                     "chip base\n";
-    }
-
-    return config;
-}
-
 // Source: hw-management-bmc-copy-cartridge-data.sh. Copies the primary
 // cartridge FRU's rack/topology/tray/slot ids into the switch-board CPLD.
 struct CartridgeConfig
@@ -607,15 +542,6 @@ static void ast2700_init_bootargs()
 // ARMv7_CPU and ARMv8_CPU as spelled in this machine's helpers copy.
 constexpr std::array<std::string_view, 2> ast2700_decode_cpu_types{
     "0xC07", "0xD04"};
-
-// Boards whose cable cartridge EEPROMs hw-management.sh start added.
-constexpr std::array<CartridgeBoard, 5> ast2700_cartridge_boards{{
-    {"Juliet", "HI176"},
-    {"Rosalind", "HI180"},
-    {"ROSALIND", "HI180"},
-    {"Spc6", "HI181"},
-    {"Spc6", "HI182"},
-}};
 
 // ── CPLD-ready gate (VRU) ─────────────────────────────────────────────────
 // On VRU each MCU is the root of trust of one CPLD: it authenticates the CPLD
@@ -1027,14 +953,9 @@ int init_switch_ast2700_bmc()
     {
         NosHookGuard nos_hook;
 
-        auto gpio_config = load_gpio_pin_config();
-        if (!gpio_config)
-        {
-            std::cerr << "switch-ast2700-bmc: falling back to built-in GPIO "
-                         "defaults\n";
-            gpio_config = ast2700_gpio_pins_hardcoded();
-        }
-        sysfs_gpio_apply(gpio_config->pins);
+        const auto gpio_config =
+            load_gpio_pin_config().value_or(GpioPinConfig{});
+        sysfs_gpio_apply(gpio_config.pins);
 
         // Both no-ops unless the active HID's platform_features.conf asks for
         // them. They must precede the wait below: the system tree appears only
@@ -1044,7 +965,7 @@ int init_switch_ast2700_bmc()
 
         hw_mgmt_wait_system_tree("switch-ast2700-bmc");
 
-        hw_mgmt_link_gpio(gpio_config->pins);
+        hw_mgmt_link_gpio(gpio_config.pins);
         std::cerr << "switch-ast2700-bmc: GPIO sysfs initialization "
                      "complete\n";
 
@@ -1054,9 +975,9 @@ int init_switch_ast2700_bmc()
             ast2700_mlxreg_io_hwmon, "switch-ast2700-bmc");
 
         // A timeout here is not fatal.
-        if (!gpio_config->bmc_stby_ready.empty())
+        if (!gpio_config.bmc_stby_ready.empty())
         {
-            wait_sysfs_value(gpio_config->bmc_stby_ready, "1", 10, 1000ms);
+            wait_sysfs_value(gpio_config.bmc_stby_ready, "1", 10, 1000ms);
         }
 
         write_cpu_type("switch-ast2700-bmc");
@@ -1137,11 +1058,9 @@ int init_switch_ast2700_bmc()
         unset_write_protect_on_boot();
     }
 
-    hw_mgmt_boot_start(ast2700_cartridge_boards, ast2700_decode_cpu_types);
+    hw_mgmt_boot_start({}, ast2700_decode_cpu_types);
 
     sd_notify(0, "READY=1");
-
-    gpio::release_all();
 
     phosphor_log_all("platform init completed");
 

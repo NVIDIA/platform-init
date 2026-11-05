@@ -107,8 +107,6 @@ std::optional<int> sysfs_gpiochip_base_aspeed();
 // Disambiguates identical expanders on different buses, e.g. "5-0020".
 std::optional<int> sysfs_gpiochip_base_by_i2c(std::string_view i2c_id);
 
-std::optional<int> sysfs_gpiochip_base_by_i2c(unsigned bus, unsigned address);
-
 std::optional<int> sysfs_gpiochip_base_for_chip_id(std::string_view chip);
 
 bool wait_sysfs_value(

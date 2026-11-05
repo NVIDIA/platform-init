@@ -18,7 +18,6 @@ struct McuLines
 {
     std::string name;
     std::string reset;
-    std::string recovery;
     std::string ready;
 };
 
