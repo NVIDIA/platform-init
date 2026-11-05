@@ -30,6 +30,7 @@ platform_srcs = files(
     'platforms/nvidia/nvidia_platform_utils.cpp',
     'platforms/nvidia/nvl32.cpp',
     'platforms/nvidia/switch_ast2700_bmc.cpp',
+    'platforms/nvidia/switch_cartridge.cpp',
     'platforms/nvidia/switch_common.cpp',
     'platforms/nvidia/switch_mcu.cpp',
     'platforms/nvidia/switch_rosalind_bmc.cpp',
