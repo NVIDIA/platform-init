@@ -204,4 +204,10 @@ std::string devtree_from_bom(std::string_view bom, std::string_view json);
 void hw_mgmt_boot_start(std::span<const CartridgeBoard> cartridge_boards,
                         std::span<const std::string_view> decode_cpu_types);
 
+// rtc-detection's PCF85053A step: an unreliable-time flag (CIF/RTCF/OF in
+// reg 0x0b) makes the driver refuse every read, so the kernel does not set
+// the clock from it. Clears them and the STOP bit, then sets the clock from
+// the RTC unless the kernel already did.
+void recover_external_rtc(std::string_view tag);
+
 } // namespace nvidia

@@ -1140,6 +1140,8 @@ int init_switch_ast2700_bmc()
 
     phosphor_log_all("platform init completed");
 
+    recover_external_rtc("switch-ast2700-bmc");
+
     pause();
     std::cerr << "Releasing platform\n";
 

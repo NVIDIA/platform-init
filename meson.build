@@ -35,7 +35,6 @@ platform_srcs = files(
     'platforms/nvidia/switch_misc.cpp',
     'platforms/nvidia/switch_preps.cpp',
     'platforms/nvidia/switch_rosalind_bmc.cpp',
-    'platforms/nvidia/switch_rtc.cpp',
     'platforms/nvidia/switch_spc6_ast2600_bmc.cpp',
     'platforms/nvidia/vr_c2_bmc.cpp',
     'platforms/nvidia/vr_e5010_bmc.cpp',
@@ -67,24 +66,6 @@ if get_option('tests').allowed()
         required: get_option('tests').enabled(),
     )
     if rtc_gtest.found()
-        test(
-            'test-switch-rtc',
-            executable(
-                'test-switch-rtc',
-                'test/test-switch-rtc.cpp',
-                'platforms/nvidia/switch_rtc.cpp',
-                'platforms/nvidia/nvidia_platform_utils.cpp',
-                util_srcs,
-                include_directories: ['.', 'platforms'],
-                dependencies: [
-                    rtc_gtest,
-                    gpiodcxx_dep,
-                    i2c_dep,
-                    libsystemd_dep,
-                    sdbusplus,
-                ],
-            ),
-        )
         test(
             'test-compute-hmc',
             executable(

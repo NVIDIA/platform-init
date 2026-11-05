@@ -3,8 +3,6 @@
 
 #include "nvidia_platform_utils.hpp"
 
-#include <linux/i2c-dev.h>
-#include <linux/i2c.h>
 #include <linux/rtc.h>
 
 namespace nvidia
@@ -344,21 +342,6 @@ int rtc_write_system_time(int fd)
 namespace
 {
 
-// i2ctransfer -y -f <bus> w0@<addr>, then w1@<addr> <reg> r1.
-int forced_read(unsigned bus, uint8_t addr, uint8_t reg)
-{
-    int fd = open(std::format("/dev/i2c-{}", bus).c_str(), O_RDWR);
-    i2c_msg msg{.addr = addr, .flags = 0, .len = 0, .buf = nullptr};
-    i2c_rdwr_ioctl_data data{.msgs = &msg, .nmsgs = 1};
-    bool ack = fd >= 0 && ioctl(fd, I2C_RDWR, &data) >= 0;
-    if (fd >= 0)
-        close(fd);
-    std::array<uint8_t, 1> id{};
-    if (!ack || i2c::raw_transfer(bus, addr, std::array{reg}, id))
-        return -1;
-    return id[0];
-}
-
 int smbus_read(unsigned bus, uint8_t addr, uint8_t reg)
 {
     // A DTS-bound driver makes I2C_SLAVE fail with EBUSY; skip the probe.
@@ -386,23 +369,20 @@ int smbus_read(unsigned bus, uint8_t addr, uint8_t reg)
 } // namespace
 
 std::optional<RtcFound> detect_rtc(std::span<const unsigned> buses,
-                                   std::span<const RtcId> table, bool forced)
+                                   std::span<const RtcId> table)
 {
     for (unsigned bus : buses)
     {
-        int id = forced ? -1 : smbus_read(bus, table[0].addr, table[0].reg);
+        int id = smbus_read(bus, table[0].addr, table[0].reg);
         if (id == -2)
             return std::nullopt;
         for (size_t i = 0; i < table.size(); i++)
         {
-            if (forced)
-                id = forced_read(bus, table[i].addr, table[i].reg);
             if (id >= 0 && id == table[i].id)
                 return RtcFound{bus, i};
         }
     }
-    if (!forced)
-        std::cerr << "rtc_detect: no RTC found on any bus\n";
+    std::cerr << "rtc_detect: no RTC found on any bus\n";
     return std::nullopt;
 }
 

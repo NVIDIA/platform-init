@@ -637,6 +637,8 @@ int init_switch_rosalind_bmc()
 
     phosphor_log_all("platform init completed");
 
+    recover_external_rtc("switch-rosalind-bmc");
+
     pause();
     std::cerr << "Releasing platform\n";
 

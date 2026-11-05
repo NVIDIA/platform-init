@@ -130,12 +130,11 @@ struct RtcFound
     size_t index;
 };
 
-// First table entry whose ID register matches, buses outer, entries inner.
-// forced (switch rtc-detection.sh): zero-length write probe, then I2C_RDWR
-// read, per entry. Otherwise (VR): stop when a driver already owns
-// table[0].addr, else one SMBus read of table[0] per bus.
+// First table entry whose ID register matches, buses outer, entries inner:
+// stop when a driver already owns table[0].addr, else one SMBus read of
+// table[0] per bus.
 std::optional<RtcFound> detect_rtc(std::span<const unsigned> buses,
-                                   std::span<const RtcId> table, bool forced);
+                                   std::span<const RtcId> table);
 
 } // namespace nvidia
 

@@ -7,7 +7,6 @@
 #include "nvidia/platforms.hpp"
 #include "nvidia/switch_misc.hpp"
 #include "nvidia/switch_preps.hpp"
-#include "nvidia/switch_rtc.hpp"
 #include "utilities.hpp"
 
 #include <fcntl.h>
@@ -56,7 +55,6 @@ constexpr auto init_functions = std::to_array<
       [] {
           return nvidia::switch_plat_preps("nvidia-switch-spc6-ast2600-bmc");
       }},
-     {"nvidia-switch-rtc-detect", nvidia::switch_rtc_detect},
      {"nvidia-switch-i2c-slave-setup",
       [] { return nvidia::switch_misc::i2c_slave_setup(); }}});
 

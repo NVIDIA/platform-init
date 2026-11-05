@@ -399,7 +399,7 @@ std::optional<RtcFound> rtc_detect(const Rtc& rtc)
 {
     if (rtc.buses.empty() || rtc.parts.empty())
         return std::nullopt;
-    auto found = detect_rtc(rtc.buses, rtc.parts, false);
+    auto found = detect_rtc(rtc.buses, rtc.parts);
     if (!found)
         return std::nullopt;
     const auto& part = rtc.parts[found->index];

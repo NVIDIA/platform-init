@@ -1227,4 +1227,56 @@ void hw_mgmt_boot_start(std::span<const CartridgeBoard> cartridge_boards,
     std::cerr << "hw-management: init completed\n";
 }
 
+void recover_external_rtc(std::string_view tag)
+{
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    for (const auto& e :
+         fs::directory_iterator("/sys/bus/i2c/drivers/pcf85053a", ec))
+    {
+        const auto name = e.path().filename().string();
+        unsigned bus = 0;
+        unsigned addr = 0;
+        if (std::sscanf(name.c_str(), "%u-%x", &bus, &addr) != 2)
+            continue;
+        auto reg = [&](uint8_t r, int val = -1) {
+            std::array<uint8_t, 2> w{r, static_cast<uint8_t>(val)};
+            std::array<uint8_t, 1> rd{};
+            const bool read = val < 0;
+            if (i2c::raw_transfer(bus, static_cast<uint8_t>(addr),
+                                  std::span(w).first(read ? 1 : 2),
+                                  std::span(rd).first(read ? 1 : 0)))
+                return -1;
+            return read ? int{rd[0]} : 0;
+        };
+        const int status = reg(0x0b);
+        if (status > 0 && (status & 0x70))
+        {
+            std::cerr << std::format("{}: RTC unreliable time flags 0x{:02x}; "
+                                     "clearing\n",
+                                     tag, status);
+            const int ctrl = reg(0x0b, status & 0x07) < 0 ? -1 : reg(0x0a);
+            if (ctrl < 0 || ((ctrl & 0x80) && reg(0x0a, ctrl & ~0x80) < 0))
+                std::cerr << std::format("{}: RTC flag recovery failed\n", tag);
+        }
+        for (const auto& r : fs::directory_iterator(e.path() / "rtc", ec))
+        {
+            if (detail::sysfs_read((r.path() / "hctosys").string()) == "1")
+                return;
+            std::time_t epoch = 0;
+            const auto v =
+                detail::sysfs_read((r.path() / "since_epoch").string());
+            if (v &&
+                std::from_chars(v->data(), v->data() + v->size(), epoch).ec ==
+                    std::errc{})
+            {
+                std::cerr << std::format("{}: clock set from {} ({})\n", tag,
+                                         r.path().filename().string(), epoch);
+                set_system_clock(epoch);
+            }
+            return;
+        }
+    }
+}
+
 } // namespace nvidia
