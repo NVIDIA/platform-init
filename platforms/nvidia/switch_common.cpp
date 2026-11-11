@@ -5,6 +5,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cctype>
+
 namespace nvidia
 {
 
@@ -609,17 +611,20 @@ std::string fru_rev_id_from_eeprom(std::string_view eeprom_path)
     while (pos + 1 < area_end)
     {
         const uint8_t tl = buf[pos];
-        // 0xC1 end-of-fields; 0xFF padding/end used by Rosalind VPD.
-        if (tl == 0xC1 || tl == 0xFF)
+        // 0xC1 is end-of-fields. 0xFF is not: 8-bit ASCII of length 63 is
+        // 0xC0|63 = 0xFF. HI195 space-padded serial/part and the 63-byte BOM
+        // extra use that encoding. A 0xFF pad that does not fit before the
+        // area checksum still stops (Rosalind trailing pad).
+        if (tl == 0xC1)
         {
             break;
         }
         const size_t len = tl & 0x3f;
-        ++pos;
-        if (pos + len > area_end)
+        if (pos + 1 + len > area_end - 1)
         {
             break;
         }
+        ++pos;
         if (field_idx >= 5)
         {
             // Keep empty extras so the two fields before HID stay in place.
@@ -639,24 +644,53 @@ std::string fru_rev_id_from_eeprom(std::string_view eeprom_path)
             break;
         }
     }
-    if (hid_i < 2)
+    const auto lower_nospace = [](std::string_view rev) {
+        std::string out;
+        out.reserve(rev.size());
+        for (const unsigned char c : rev)
+        {
+            if (detail::is_whitespace(c))
+            {
+                continue;
+            }
+            out.push_back(static_cast<char>(std::tolower(c)));
+        }
+        return out;
+    };
+
+    // HI180: HID is a Board Extra; RevId is the two extras before it.
+    if (hid_i >= 2)
     {
-        return {};
+        return lower_nospace(extras[static_cast<size_t>(hid_i - 2)] +
+                             extras[static_cast<size_t>(hid_i - 1)]);
     }
 
-    std::string rev = extras[static_cast<size_t>(hid_i - 2)] +
-                      extras[static_cast<size_t>(hid_i - 1)];
-    std::string out;
-    out.reserve(rev.size());
-    for (const unsigned char c : rev)
-    {
-        if (detail::is_whitespace(c))
+    // HI183/HI195: HID is Board Product. RevId is a digit extra followed
+    // by a letter extra (e.g. "18" + "A2" -> "18a2").
+    const auto is_digits = [](std::string_view field) {
+        return !field.empty() &&
+               std::ranges::all_of(field, [](unsigned char c) {
+                   return std::isdigit(c) != 0;
+               });
+    };
+    const auto is_rev_letter = [](std::string_view field) {
+        if (field.empty() ||
+            std::isalpha(static_cast<unsigned char>(field[0])) == 0)
         {
-            continue;
+            return false;
         }
-        out.push_back(static_cast<char>(std::tolower(c)));
+        return std::ranges::all_of(field.substr(1), [](unsigned char c) {
+            return std::isalnum(c) != 0;
+        });
+    };
+    for (size_t i = 0; i + 1 < extras.size(); ++i)
+    {
+        if (is_digits(extras[i]) && is_rev_letter(extras[i + 1]))
+        {
+            return lower_nospace(extras[i] + extras[i + 1]);
+        }
     }
-    return out;
+    return {};
 }
 
 void write_system_hw_rev(std::string_view eeprom_path, std::string_view hid,
