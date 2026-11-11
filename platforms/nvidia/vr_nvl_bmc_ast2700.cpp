@@ -121,7 +121,7 @@ int init_vr_nvl_bmc_ast2700()
         configure_pdb_tmp_alert_threshold(0);
         gpio::set("BF3_AOC_NCSI_PRSNT_L-I", 0);
         gpio::set("MUX_I2C_ESPI_SEL-O", 0);
-        gpio::set("EEDO_LED2-O", 1);
+        gpio::set("1GB_NIC_ENABLE-O", 1);
     }
 
     compute::bind_expanders(0, {0x20, 0x75});
