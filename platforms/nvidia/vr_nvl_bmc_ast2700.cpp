@@ -108,8 +108,6 @@ int init_vr_nvl_bmc_ast2700()
 {
     std::cerr << "vr-nvl-bmc-ast2700: platform init start\n";
 
-    std::this_thread::sleep_for(60s);
-
     ehci_rebind_unbound();
 
     compute::create_state_dir();
