@@ -9,8 +9,10 @@
 
 #include <array>
 #include <filesystem>
+#include <format>
 #include <iostream>
 #include <string>
+#include <utility>
 
 namespace nvidia
 {
@@ -146,6 +148,18 @@ int init_vr_nvl_bmc_ast2700()
     compute::bind_expanders(10, {0x20, 0x21});
     compute::bind_expanders(11, {0x20, 0x21, 0x22, 0x23, 0x24});
     compute::bind_expanders(8, {0x20, 0x21, 0x22, 0x23, 0x24});
+
+    // Unused SOCAMM select pins: drive them low instead of floating.
+    for (auto [bus, board] : {std::pair{11, "B0"}, std::pair{8, "B1"}})
+    {
+        if (!std::filesystem::exists(
+                std::format("/sys/bus/i2c/drivers/pca953x/{}-0021", bus)))
+            continue;
+        for (const auto* pin :
+             {"M0_C0_SOCAMM_DAC_SEL0-O", "M0_C1_SOCAMM_DAC_SEL1-O",
+              "M0_C1_SOCAMM_I2C_SEL_R-O"})
+            gpio::set(std::format("{}_{}", board, pin).c_str(), 0);
+    }
 
     gpio::set("USB_MUX_EN-O", 1);
     gpio::set("BMC_MUX_PI3DP_SEL-O", 0);
