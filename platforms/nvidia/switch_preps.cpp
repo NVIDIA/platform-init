@@ -153,6 +153,30 @@ static void preps_link_sku_dir(const std::string& sku)
     }
 }
 
+// Per-HID modprobe configuration, e.g. the VRU platform driver blacklist that
+// keeps udev from loading the driver before platform-init sees the CPLD ready.
+// kmod reads /run/modprobe.d, and this runs before systemd-udevd starts.
+static void preps_activate_modprobe()
+{
+    const auto dir = std::format("{}/etc/modprobe.d", plat_active);
+    std::error_code ec;
+    for (fs::directory_iterator it{dir, ec}, end; !ec && it != end;
+         it.increment(ec))
+    {
+        const auto& conf = it->path();
+        const auto name = conf.filename().string();
+        std::error_code entry_ec;
+        if (name.starts_with('.') || conf.extension() != ".conf" ||
+            !fs::exists(conf, entry_ec))
+            continue;
+        fs::create_directories("/run/modprobe.d", entry_ec);
+        const auto link = std::format("/run/modprobe.d/{}", name);
+        preps_link(conf.string(), link);
+        std::cerr << std::format("activated modprobe config: {} -> {}\n",
+                                 conf.string(), link);
+    }
+}
+
 struct Ast2700Sku
 {
     std::string_view hid;
@@ -254,6 +278,8 @@ static void preps_ast2700(const std::string& sku)
         preps_link(rules, "/run/udev/rules.d/99-mctp-usb.rules");
         std::cerr << std::format("activated MCTP USB udev rules: {}\n", rules);
     }
+
+    preps_activate_modprobe();
 }
 
 // get_mgmt_board_revision: config1 once hw-management is up, else the CPLD.
