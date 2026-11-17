@@ -56,7 +56,7 @@ static std::vector<SysfsGpioPin> spc6_2600_gpio_pins(std::string_view hid,
             {e + 3, SysfsGpioDir::Out, 1, "GP_BMC_PWR_CYCLE_3V3_MASK_L"});
         pins.push_back({e + 6, SysfsGpioDir::In, std::nullopt,
                         "SE_SOC_EROT_BOOT_COMPLETE"});
-        // Direction only; unset_write_protect_on_boot() sets the level.
+        // Direction only; write-protect-unset-on-boot.service sets the level.
         pins.push_back(
             {e + 7, SysfsGpioDir::Out, std::nullopt, "GP_BMC_WP_CTRL_GPIO_L"});
         // 0 gives JTAG access to the BIOS flashes; 1 only for recovery.
@@ -112,10 +112,8 @@ static std::vector<SysfsGpioPin> spc6_2600_gpio_pins(std::string_view hid,
     return pins;
 }
 
-// ARMv7_CPU and ARMv8_CPU as spelled in this machine's helpers copy;
-// 0xd04 never matches the 0xD04 platform-init writes.
-constexpr std::array<std::string_view, 2> spc6_2600_decode_cpu_types{
-    "0xC07", "0xd04"};
+// ARMv7_CPU as spelled in this machine's helpers copy.
+constexpr std::array<std::string_view, 1> spc6_2600_decode_cpu_types{"0xC07"};
 
 // Boards whose cable cartridge EEPROMs hw-management.sh start added.
 constexpr std::array<CartridgeBoard, 4> spc6_2600_cartridge_boards{{
@@ -131,81 +129,60 @@ int init_switch_spc6_ast2600_bmc()
 
     std::cerr << "switch-spc6-ast2600-bmc: platform init start\n";
 
-    run_nos_hook("pre");
+    // HID first: it picks offset 12's role in the GPIO setup.
+    const auto hid = vpd_read_field(
+        spc6_2600_vpd_eeprom, spc6_2600_vpd_hid_offset, spc6_2600_vpd_hid_size);
+    std::cerr << std::format("switch-spc6-ast2600-bmc: system hardware Id "
+                             "is {}\n",
+                             hid);
+    hw_mgmt_write_config("hid", hid);
 
+    std::string stby_ready;
+    const auto pins = spc6_2600_gpio_pins(hid, stby_ready);
+    sysfs_gpio_apply(pins);
+
+    hw_mgmt_wait_system_tree("switch-spc6-ast2600-bmc");
+
+    hw_mgmt_link_gpio(pins);
+    std::cerr << "switch-spc6-ast2600-bmc: GPIO sysfs initialization "
+                 "complete\n";
+
+    hw_mgmt_take_i2c_when_cpu_off(spc6_2600_mlxreg_io_hwmon,
+                                  "switch-spc6-ast2600-bmc");
+
+    // A timeout here is not fatal.
+    if (!stby_ready.empty())
     {
-        NosHookGuard nos_hook;
+        wait_sysfs_value(stby_ready, "1", 10, 1000ms);
+    }
 
-        // HID first: it picks offset 12's role in the GPIO setup.
-        const auto hid =
-            vpd_read_field(spc6_2600_vpd_eeprom, spc6_2600_vpd_hid_offset,
-                           spc6_2600_vpd_hid_size);
-        std::cerr << std::format("switch-spc6-ast2600-bmc: system hardware Id "
-                                 "is {}\n",
-                                 hid);
-        hw_mgmt_write_config("hid", hid);
+    write_cpu_type("switch-spc6-ast2600-bmc");
 
-        std::string stby_ready;
-        const auto pins = spc6_2600_gpio_pins(hid, stby_ready);
-        sysfs_gpio_apply(pins);
+    // The BOM offset is not fixed; vpd_read_bom() scans for it.
+    if (const auto bom =
+            vpd_read_bom(spc6_2600_vpd_eeprom, hid, spc6_2600_bom_hids,
+                         std::nullopt, spc6_2600_vpd_bom_size);
+        !bom.empty())
+    {
+        std::cerr << std::format("switch-spc6-ast2600-bmc: system hardware "
+                                 "BOM record is {}\n",
+                                 bom);
+        hw_mgmt_write_config("bom", bom);
+    }
 
-        hw_mgmt_wait_system_tree("switch-spc6-ast2600-bmc");
+    write_system_hw_rev(spc6_2600_vpd_eeprom, hid, spc6_2600_bom_hids,
+                        "switch-spc6-ast2600-bmc");
 
-        hw_mgmt_link_gpio(pins);
-        std::cerr << "switch-spc6-ast2600-bmc: GPIO sysfs initialization "
-                     "complete\n";
-
-        bmc_init_bootargs();
-
-        const bool cpu_off = hw_mgmt_take_i2c_when_cpu_off(
-            spc6_2600_mlxreg_io_hwmon, "switch-spc6-ast2600-bmc");
-
-        // A timeout here is not fatal.
-        if (!stby_ready.empty())
-        {
-            wait_sysfs_value(stby_ready, "1", 10, 1000ms);
-        }
-
-        write_cpu_type("switch-spc6-ast2600-bmc");
-
-        // The BOM offset is not fixed; vpd_read_bom() scans for it.
-        if (const auto bom =
-                vpd_read_bom(spc6_2600_vpd_eeprom, hid, spc6_2600_bom_hids,
-                             std::nullopt, spc6_2600_vpd_bom_size);
-            !bom.empty())
-        {
-            std::cerr << std::format("switch-spc6-ast2600-bmc: system hardware "
-                                     "BOM record is {}\n",
-                                     bom);
-            hw_mgmt_write_config("bom", bom);
-        }
-
-        write_system_hw_rev(spc6_2600_vpd_eeprom, hid, spc6_2600_bom_hids,
-                            "switch-spc6-ast2600-bmc");
-
-        shell_out("a2d_leakage_config.sh", "switch-spc6-ast2600-bmc");
-
-        if (filesystem_check_mtd() != EXIT_SUCCESS)
-        {
-            std::cerr << "switch-spc6-ast2600-bmc: FATAL: filesystem check "
-                         "failed\n";
-            return EXIT_FAILURE;
-        }
-
-        // With the CPU off, I3C is bound on CPU reset deassert instead.
-        if (!cpu_off)
-        {
-            bind_i3c_controller();
-        }
-
-        unset_write_protect_on_boot();
+    if (filesystem_check_mtd() != EXIT_SUCCESS)
+    {
+        std::cerr << "switch-spc6-ast2600-bmc: FATAL: filesystem check "
+                     "failed\n";
+        return EXIT_FAILURE;
     }
 
     hw_mgmt_boot_start(spc6_2600_cartridge_boards, spc6_2600_decode_cpu_types);
 
     sd_notify(0, "READY=1");
-
-    gpio::release_all();
 
     phosphor_log_all("platform init completed");
 

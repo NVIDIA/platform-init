@@ -41,8 +41,8 @@ McuConfig parse_mcu_config(std::string_view text)
             return it != mcu.end() && it->is_string() ? it->get<std::string>()
                                                       : std::string{};
         };
-        config.mcus.push_back({field("name"), field("reset_gpio"),
-                               field("recovery_gpio"), field("ready_gpio")});
+        config.mcus.push_back(
+            {field("name"), field("reset_gpio"), field("ready_gpio")});
     }
     return config;
 }

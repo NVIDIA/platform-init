@@ -142,7 +142,7 @@ bool reset_usb_hub_if_absent(std::string_view tag, const char* line,
 
 // Binds the driver of the first <rtc> part found on the first bus that has
 // one.
-void rtc_detect(const Rtc& rtc);
+std::optional<RtcFound> rtc_detect(const Rtc& rtc);
 
 // For an init that stops early: detects the RTC, as rtc-detection.service
 // did whether or not bmc-boot-complete succeeded.

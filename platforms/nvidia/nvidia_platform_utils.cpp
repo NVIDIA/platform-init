@@ -3,8 +3,7 @@
 
 #include "nvidia_platform_utils.hpp"
 
-#include <linux/i2c-dev.h>
-#include <linux/i2c.h>
+#include <linux/rtc.h>
 
 namespace nvidia
 {
@@ -143,6 +142,31 @@ void uboot_env_set(std::string_view key, std::string_view value)
     }
 }
 
+bool rwfs_usable(std::string_view rwfs_mount, std::string_view work_path)
+{
+    if (!detail::is_mounted(rwfs_mount))
+    {
+        std::cerr << std::format("rwfs_usable: RWFS not mounted at {}\n",
+                                 rwfs_mount);
+        return false;
+    }
+
+    // ROFS: no space to create the work dir.
+    const std::filesystem::path work{work_path};
+    if (std::filesystem::is_directory(work))
+    {
+        std::error_code ec;
+        std::filesystem::create_directory(work / "work", ec);
+        if (ec)
+        {
+            std::cerr << "rwfs_usable: no space on RWFS — read-only mode; "
+                         "factory reset required\n";
+            return false;
+        }
+    }
+    return true;
+}
+
 int filesystem_check(std::string_view rwfs_mount, std::string_view work_path)
 {
     using namespace std::chrono_literals;
@@ -197,18 +221,9 @@ int filesystem_check(std::string_view rwfs_mount, std::string_view work_path)
         return EXIT_FAILURE; // unreachable
     }
 
-    // ROFS: no space to create the work dir.
-    const std::filesystem::path work{work_path};
-    if (std::filesystem::is_directory(work))
+    if (!rwfs_usable(rwfs_mount, work_path))
     {
-        std::error_code ec;
-        std::filesystem::create_directory(work / "work", ec);
-        if (ec)
-        {
-            std::cerr << "filesystem_check: no space on RWFS — read-only mode; "
-                         "factory reset required\n";
-            return EXIT_FAILURE;
-        }
+        return EXIT_FAILURE;
     }
 
     std::cerr << "filesystem_check: RWFS OK\n";
@@ -312,23 +327,36 @@ bool check_rw_filesystems()
     return false;
 }
 
+bool set_system_clock(std::time_t epoch)
+{
+    const timespec ts{.tv_sec = epoch, .tv_nsec = 0};
+    if (clock_settime(CLOCK_REALTIME, &ts) == 0)
+        return true;
+    std::cerr << std::format("cannot set the clock to {}: {}\n", epoch,
+                             std::strerror(errno));
+    return false;
+}
+
+int rtc_write_system_time(int fd)
+{
+    const std::time_t now = std::time(nullptr);
+    std::tm utc{};
+    gmtime_r(&now, &utc);
+    const rtc_time tm{
+        .tm_sec = utc.tm_sec,
+        .tm_min = utc.tm_min,
+        .tm_hour = utc.tm_hour,
+        .tm_mday = utc.tm_mday,
+        .tm_mon = utc.tm_mon,
+        .tm_year = utc.tm_year,
+        .tm_wday = utc.tm_wday,
+        .tm_yday = utc.tm_yday,
+        .tm_isdst = 0};
+    return ioctl(fd, RTC_SET_TIME, &tm) == 0 ? 0 : errno;
+}
+
 namespace
 {
-
-// i2ctransfer -y -f <bus> w0@<addr>, then w1@<addr> <reg> r1.
-int forced_read(unsigned bus, uint8_t addr, uint8_t reg)
-{
-    int fd = open(std::format("/dev/i2c-{}", bus).c_str(), O_RDWR);
-    i2c_msg msg{.addr = addr, .flags = 0, .len = 0, .buf = nullptr};
-    i2c_rdwr_ioctl_data data{.msgs = &msg, .nmsgs = 1};
-    bool ack = fd >= 0 && ioctl(fd, I2C_RDWR, &data) >= 0;
-    if (fd >= 0)
-        close(fd);
-    std::array<uint8_t, 1> id{};
-    if (!ack || i2c::raw_transfer(bus, addr, std::array{reg}, id))
-        return -1;
-    return id[0];
-}
 
 int smbus_read(unsigned bus, uint8_t addr, uint8_t reg)
 {
@@ -357,23 +385,20 @@ int smbus_read(unsigned bus, uint8_t addr, uint8_t reg)
 } // namespace
 
 std::optional<RtcFound> detect_rtc(std::span<const unsigned> buses,
-                                   std::span<const RtcId> table, bool forced)
+                                   std::span<const RtcId> table)
 {
     for (unsigned bus : buses)
     {
-        int id = forced ? -1 : smbus_read(bus, table[0].addr, table[0].reg);
+        int id = smbus_read(bus, table[0].addr, table[0].reg);
         if (id == -2)
             return std::nullopt;
         for (size_t i = 0; i < table.size(); i++)
         {
-            if (forced)
-                id = forced_read(bus, table[i].addr, table[i].reg);
             if (id >= 0 && id == table[i].id)
                 return RtcFound{bus, i};
         }
     }
-    if (!forced)
-        std::cerr << "rtc_detect: no RTC found on any bus\n";
+    std::cerr << "rtc_detect: no RTC found on any bus\n";
     return std::nullopt;
 }
 

@@ -151,6 +151,27 @@ int raw_transfer(unsigned int bus, uint8_t address,
     return err;
 }
 
+bool probe(unsigned int bus, uint8_t address)
+{
+    const std::string dev_path = std::format("/dev/i2c-{}", bus);
+    const int fd = open(dev_path.c_str(), O_RDWR | O_CLOEXEC);
+    if (fd < 0)
+    {
+        return false;
+    }
+    bool found = false;
+    if (ioctl(fd, I2C_SLAVE, address) < 0)
+    {
+        found = errno == EBUSY;
+    }
+    else
+    {
+        found = i2c_smbus_write_quick(fd, I2C_SMBUS_WRITE) >= 0;
+    }
+    close(fd);
+    return found;
+}
+
 std::expected<void, std::error_code> bind_device(
     unsigned int bus, unsigned int address, std::string_view driver_name)
 {

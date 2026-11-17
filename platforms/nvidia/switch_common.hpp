@@ -32,11 +32,6 @@ std::string first_word(std::span<const uint8_t> raw);
 
 } // namespace detail
 
-// ttyS2 + host MAC means the env was already rewritten.
-void bmc_init_bootargs();
-
-void shell_out(std::string_view cmd, std::string_view log_prefix);
-
 // The hwmon instance number is not stable across boots; resolve the glob.
 std::string hw_mgmt_hwmon_attr(std::string_view hwmon_dir,
                                std::string_view attribute,
@@ -107,8 +102,6 @@ std::optional<int> sysfs_gpiochip_base_aspeed();
 // Disambiguates identical expanders on different buses, e.g. "5-0020".
 std::optional<int> sysfs_gpiochip_base_by_i2c(std::string_view i2c_id);
 
-std::optional<int> sysfs_gpiochip_base_by_i2c(unsigned bus, unsigned address);
-
 std::optional<int> sysfs_gpiochip_base_for_chip_id(std::string_view chip);
 
 bool wait_sysfs_value(
@@ -136,49 +129,13 @@ void write_system_hw_rev(std::string_view eeprom_path, std::string_view hid,
                          std::span<const std::string_view> allowed_hids,
                          std::string_view log_prefix);
 
-// Returns 137 on timeout; callers must not fail init on non-zero.
-int modprobe_with_timeout(
-    std::string_view module,
-    std::chrono::seconds timeout = std::chrono::seconds{5},
-    bool ignore_install = false);
-
-// /proc/modules uses underscores, so compare normalised names.
-bool module_loaded(std::string_view module);
-
-// Runs the NOS-provided fixup script for this phase and publishes status.
-void run_nos_hook(
-    std::string_view phase,
-    std::string_view hook_file = "/usr/local/bin/hw-management-bmc-fixup.sh");
-
-// Scope to the bmc_init block: init functions end in pause().
-struct NosHookGuard
-{
-    NosHookGuard() = default;
-    NosHookGuard(const NosHookGuard&) = delete;
-    NosHookGuard& operator=(const NosHookGuard&) = delete;
-    NosHookGuard(NosHookGuard&&) = delete;
-    NosHookGuard& operator=(NosHookGuard&&) = delete;
-    ~NosHookGuard()
-    {
-        run_nos_hook("post");
-    }
-};
-
 // Read as key=value, not sourced; missing means most conservative mode.
 std::string platform_feature(
     std::string_view key,
     std::string_view path = "/etc/platform_features.conf");
 
-// In unset_on_boot mode write protect is dropped once, never re-enabled.
-void unset_write_protect_on_boot(
-    std::string_view system_path = hw_mgmt_system_path);
-
 // No D-Bus Logging entry: phosphor-log-manager is not up this early.
 void phosphor_log_all(std::string_view message);
-
-bool i2c_mux_present();
-
-int bind_i3c_controller();
 
 // A (devicetree model word, HID) pair whose cable cartridge EEPROMs are
 // appended to the devtree file.
@@ -203,5 +160,11 @@ std::string devtree_from_bom(std::string_view bom, std::string_view json);
 // script: any other value takes its fold path, and busybox has no fold.
 void hw_mgmt_boot_start(std::span<const CartridgeBoard> cartridge_boards,
                         std::span<const std::string_view> decode_cpu_types);
+
+// rtc-detection's PCF85053A step: an unreliable-time flag (CIF/RTCF/OF in
+// reg 0x0b) makes the driver refuse every read, so the kernel does not set
+// the clock from it. Clears them and the STOP bit, then sets the clock from
+// the RTC unless the kernel already did.
+void recover_external_rtc(std::string_view tag);
 
 } // namespace nvidia

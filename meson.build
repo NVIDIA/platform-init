@@ -30,13 +30,10 @@ platform_srcs = files(
     'platforms/nvidia/nvidia_platform_utils.cpp',
     'platforms/nvidia/nvl32.cpp',
     'platforms/nvidia/switch_ast2700_bmc.cpp',
+    'platforms/nvidia/switch_cartridge.cpp',
     'platforms/nvidia/switch_common.cpp',
-    'platforms/nvidia/switch_mctp.cpp',
     'platforms/nvidia/switch_mcu.cpp',
-    'platforms/nvidia/switch_misc.cpp',
-    'platforms/nvidia/switch_preps.cpp',
     'platforms/nvidia/switch_rosalind_bmc.cpp',
-    'platforms/nvidia/switch_rtc.cpp',
     'platforms/nvidia/switch_spc6_ast2600_bmc.cpp',
     'platforms/nvidia/vr_c2_bmc.cpp',
     'platforms/nvidia/vr_e5010_bmc.cpp',
@@ -61,34 +58,6 @@ executable(
     install_dir: get_option('libexecdir'),
 )
 
-if get_option('tests').allowed()
-    rtc_gtest = dependency(
-        'gtest',
-        main: true,
-        required: get_option('tests').enabled(),
-    )
-    if rtc_gtest.found()
-        test(
-            'test-switch-rtc',
-            executable(
-                'test-switch-rtc',
-                'test/test-switch-rtc.cpp',
-                'platforms/nvidia/switch_rtc.cpp',
-                'platforms/nvidia/nvidia_platform_utils.cpp',
-                util_srcs,
-                include_directories: ['.', 'platforms'],
-                dependencies: [
-                    rtc_gtest,
-                    gpiodcxx_dep,
-                    i2c_dep,
-                    libsystemd_dep,
-                    sdbusplus,
-                ],
-            ),
-        )
-    endif
-endif
-
 platform_name = get_option('platform-name')
 
 systemd_system_unit_dir = systemd_dep.get_variable('systemd_system_unit_dir')
@@ -99,44 +68,6 @@ configure_file(
     install: true,
     configuration: configuration_data({'PLATFORM_NAME': platform_name}),
 )
-
-script_base = 'platforms/nvidia/scripts/platforms'
-
-# Replaces bmc-plat-specific-preps.sh under the same unit name.
-if platform_name in [
-    'nvidia-switch-ast2700-bmc',
-    'nvidia-switch-rosalind-bmc',
-    'nvidia-switch-spc6-ast2600-bmc',
-]
-    configure_file(
-        input: 'bmc-plat-specific-preps.service.in',
-        output: 'bmc-plat-specific-preps.service',
-        install_dir: systemd_system_unit_dir,
-        install: true,
-        configuration: configuration_data({'PLATFORM_NAME': platform_name}),
-    )
-endif
-
-if get_option('tests').allowed()
-    preps_gtest = dependency(
-        'gtest',
-        main: true,
-        required: get_option('tests').enabled(),
-    )
-    if preps_gtest.found()
-        test(
-            'test-switch-preps',
-            executable(
-                'test-switch-preps',
-                'platforms/nvidia/test/test_switch_preps.cpp',
-                'platforms/nvidia/switch_preps.cpp',
-                'i2c.cpp',
-                include_directories: ['.', 'platforms'],
-                dependencies: [preps_gtest, i2c_dep],
-            ),
-        )
-    endif
-endif
 
 subdir('emmc-manager')
 
@@ -152,50 +83,3 @@ emmc_partition_platforms = [
     'nvidia-switch-spc6-ast2600-bmc',
 ]
 subdir('emmc-partition')
-
-# Only spc6-ast2600-bmc sets BIND_I3C_ON_BIOS_BOOT=1; elsewhere the handler
-# defaults it to 0, so the unit would never be started.
-if platform_name.contains('spc6-ast2600')
-    subdir('bind-i3c')
-endif
-
-if get_option('tests').allowed()
-    switch_gtest_dep = dependency(
-        'gtest',
-        main: true,
-        required: get_option('tests').enabled(),
-    )
-    if switch_gtest_dep.found()
-        test(
-            'test-switch-mcu',
-            executable(
-                'test-switch-mcu',
-                'test/test-switch-mcu.cpp',
-                'test/test-switch-mctp.cpp',
-                'platforms/nvidia/switch_mcu.cpp',
-                'platforms/nvidia/switch_mctp.cpp',
-                'platforms/nvidia/switch_common.cpp',
-                'platforms/nvidia/nvidia_platform_utils.cpp',
-                util_srcs,
-                dependencies: [
-                    switch_gtest_dep,
-                    gpiodcxx_dep,
-                    libsystemd_dep,
-                    i2c_dep,
-                    sdbusplus,
-                ],
-                include_directories: ['.', 'platforms', 'platforms/nvidia'],
-            ),
-        )
-        test(
-            'test-switch-misc',
-            executable(
-                'test-switch-misc',
-                'test/test-switch-misc.cpp',
-                'platforms/nvidia/switch_misc.cpp',
-                dependencies: [switch_gtest_dep, sdbusplus],
-                include_directories: ['platforms/nvidia'],
-            ),
-        )
-    endif
-endif

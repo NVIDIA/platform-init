@@ -31,6 +31,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -90,6 +91,10 @@ std::string uboot_env_get(std::string_view key);
 // An empty value unsets the variable, matching `fw_setenv <key>`.
 void uboot_env_set(std::string_view key, std::string_view value = {});
 
+// RWFS mounted, with room for its overlay work dir.
+bool rwfs_usable(std::string_view rwfs_mount = "/run/initramfs/rw",
+                 std::string_view work_path = "/run/initramfs/rw/work");
+
 int filesystem_check(std::string_view rwfs_mount = "/run/initramfs/rw",
                      std::string_view work_path = "/run/initramfs/rw/work");
 
@@ -107,6 +112,13 @@ bool check_rofs();
 // emmc-rwfs check_rw_filesystems.
 bool check_rw_filesystems();
 
+// date -u -s @<epoch>.
+bool set_system_clock(std::time_t epoch);
+
+// hwclock -w: the RTC open on <fd> takes the system clock, in UTC.
+// Returns 0, or an errno.
+int rtc_write_system_time(int fd);
+
 // An external RTC: answers <id> in <reg> at <addr>; id < 0 never matches.
 struct RtcId
 {
@@ -122,12 +134,11 @@ struct RtcFound
     size_t index;
 };
 
-// First table entry whose ID register matches, buses outer, entries inner.
-// forced (switch rtc-detection.sh): zero-length write probe, then I2C_RDWR
-// read, per entry. Otherwise (VR): stop when a driver already owns
-// table[0].addr, else one SMBus read of table[0] per bus.
+// First table entry whose ID register matches, buses outer, entries inner:
+// stop when a driver already owns table[0].addr, else one SMBus read of
+// table[0] per bus.
 std::optional<RtcFound> detect_rtc(std::span<const unsigned> buses,
-                                   std::span<const RtcId> table, bool forced);
+                                   std::span<const RtcId> table);
 
 } // namespace nvidia
 

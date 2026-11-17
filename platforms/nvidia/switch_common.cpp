@@ -75,31 +75,6 @@ std::string first_word(std::span<const uint8_t> raw)
 
 } // namespace detail
 
-void bmc_init_bootargs()
-{
-    const auto bootargs = uboot_env_get("bootargs");
-    if (bootargs.contains("ttyS2") && bootargs.contains("46:44:8a:c8:7f:bf"))
-    {
-        return;
-    }
-
-    uboot_env_set("bootargs", "console=ttyS2,115200n8 root=/dev/ram rw "
-                              "g_ether.host_addr=46:44:8a:c8:7f:bf "
-                              "g_ether.dev_addr=46:44:8a:c8:7f:bd");
-}
-
-void shell_out(std::string_view cmd, std::string_view log_prefix)
-{
-    const std::string command{cmd};
-    std::cerr << std::format("{}: calling {}\n", log_prefix, command);
-    if (const int rc = std::system(command.c_str());
-        rc != 0) // NOLINT(cert-env33-c)
-    {
-        std::cerr << std::format("{}: '{}' failed (status {})\n", log_prefix,
-                                 command, rc);
-    }
-}
-
 std::string hw_mgmt_hwmon_attr(std::string_view hwmon_dir,
                                std::string_view attribute,
                                std::string_view log_prefix)
@@ -419,11 +394,6 @@ std::optional<int> sysfs_gpiochip_base_by_i2c(std::string_view i2c_id)
     return std::nullopt;
 }
 
-std::optional<int> sysfs_gpiochip_base_by_i2c(unsigned bus, unsigned address)
-{
-    return sysfs_gpiochip_base_by_i2c(std::format("{}-{:04x}", bus, address));
-}
-
 std::optional<int> sysfs_gpiochip_base_for_chip_id(std::string_view chip)
 {
     if (chip == "aspeed")
@@ -716,116 +686,6 @@ void write_system_hw_rev(std::string_view eeprom_path, std::string_view hid,
     hw_mgmt_write_config("rev_id", rev);
 }
 
-int modprobe_with_timeout(std::string_view module, std::chrono::seconds timeout,
-                          bool ignore_install)
-{
-    const auto cmd =
-        std::format("timeout -s KILL {} modprobe {}{}", timeout.count(),
-                    ignore_install ? "-i " : "", module);
-    const int raw = std::system(cmd.c_str()); // NOLINT(cert-env33-c)
-    int status = raw;
-    if (raw != -1)
-    {
-        if (WIFEXITED(raw))
-            status = WEXITSTATUS(raw);
-        else if (WIFSIGNALED(raw))
-            status = 128 + WTERMSIG(raw);
-    }
-
-    if (status == 0)
-        std::cerr << std::format("modprobe_with_timeout: {} loaded\n", module);
-    else if (status == 137)
-        std::cerr << std::format(
-            "modprobe_with_timeout: {} timed out after {}s\n", module,
-            timeout.count());
-    else
-        std::cerr << std::format(
-            "modprobe_with_timeout: {} failed (status {})\n", module, status);
-    return status;
-}
-
-bool module_loaded(std::string_view module)
-{
-    const auto normalise = [](std::string_view name) {
-        std::string out{name};
-        std::ranges::replace(out, '-', '_');
-        return out;
-    };
-    const auto wanted = normalise(module);
-
-    std::ifstream f{"/proc/modules"};
-    std::string line;
-    while (std::getline(f, line))
-    {
-        const auto space = line.find(' ');
-        const auto name =
-            space == std::string::npos ? line : line.substr(0, space);
-        if (normalise(name) == wanted)
-            return true;
-    }
-    return false;
-}
-
-void run_nos_hook(std::string_view phase, std::string_view hook_file)
-{
-    const std::filesystem::path hook{hook_file};
-    std::error_code ec;
-    if (!std::filesystem::is_regular_file(hook, ec))
-    {
-        std::cerr << std::format(
-            "run_nos_hook: no hook file, {} init hooks are not performed\n",
-            phase);
-        return;
-    }
-
-    if (::access(hook.c_str(), X_OK) != 0)
-    {
-        std::cerr << std::format(
-            "run_nos_hook: '{}' is not executable, changing permissions\n",
-            hook_file);
-        std::filesystem::permissions(hook,
-                                     std::filesystem::perms::owner_exec |
-                                         std::filesystem::perms::group_exec |
-                                         std::filesystem::perms::others_exec,
-                                     std::filesystem::perm_options::add, ec);
-        if (ec)
-        {
-            std::cerr << std::format("run_nos_hook: chmod +x {}: {}\n",
-                                     hook_file, ec.message());
-        }
-    }
-
-    std::filesystem::create_directories(hw_mgmt_config_path, ec);
-    std::filesystem::copy_file(
-        hook, std::format("{}/last-executed-fixup.sh", hw_mgmt_config_path),
-        std::filesystem::copy_options::overwrite_existing, ec);
-    if (ec)
-    {
-        std::cerr << std::format("run_nos_hook: copy {} aside failed: {}\n",
-                                 hook_file, ec.message());
-    }
-
-    const auto cmd = std::format("{} {}", hook_file, phase);
-    const int raw = std::system(cmd.c_str()); // NOLINT(cert-env33-c)
-    const int retval = (raw != -1 && WIFEXITED(raw)) ? WEXITSTATUS(raw) : raw;
-
-    hw_mgmt_write_config(std::format("fixup-status-{}", phase),
-                         std::to_string(retval));
-
-    if (retval == 0)
-    {
-        std::cerr << std::format(
-            "run_nos_hook: '{}' executed successfully with parameter {}\n",
-            hook_file, phase);
-    }
-    else
-    {
-        std::cerr << std::format("run_nos_hook: execution of '{}' with "
-                                 "parameter {} failed with return value {}\n",
-                                 hook_file, phase, retval);
-    }
-}
-
 std::string platform_feature(std::string_view key, std::string_view path)
 {
     std::ifstream conf{std::string{path}};
@@ -871,26 +731,6 @@ std::string platform_feature(std::string_view key, std::string_view path)
     return value;
 }
 
-void unset_write_protect_on_boot(std::string_view system_path)
-{
-    if (platform_feature("WRITE_PROTECT_MODE") != "unset_on_boot")
-    {
-        return;
-    }
-
-    const auto wp_sysfs = std::format("{}/GP_BMC_WP_CTRL_GPIO_L", system_path);
-    if (!std::filesystem::exists(wp_sysfs))
-    {
-        std::cerr << "Write protect sysfs node is missing, not disabling "
-                     "write protect\n";
-        return;
-    }
-
-    std::cerr << "Disabling write protect, platform write protect mode is "
-                 "unset_on_boot.\n";
-    hw_mgmt_write(wp_sysfs, "1");
-}
-
 void phosphor_log_all(std::string_view message)
 {
     std::cerr << message << "\n";
@@ -901,76 +741,6 @@ void phosphor_log_all(std::string_view message)
         if (std::ofstream console{"/dev/console"}; console)
             console << std::format("\n{}\n\n", message);
     }
-}
-
-bool i2c_mux_present()
-{
-    std::error_code ec;
-    for (const auto& entry :
-         std::filesystem::directory_iterator{"/sys/class/i2c-dev", ec})
-    {
-        const auto name = detail::sysfs_read((entry.path() / "name").string());
-        if (name && name->find("mux") != std::string::npos)
-            return true;
-    }
-    return false;
-}
-
-int bind_i3c_controller()
-{
-    using namespace std::chrono_literals;
-
-    if (module_loaded("mipi-i3c-hci"))
-    {
-        std::cerr << "bind_i3c_controller: mipi-i3c-hci module already "
-                     "loaded\n";
-        return EXIT_SUCCESS;
-    }
-
-    // Wait for the i2c muxes first so I3C cannot perturb bus enumeration.
-    constexpr int mux_timeout_ms = 20000;
-    for (int elapsed_ms = 0;; elapsed_ms += 100)
-    {
-        if (i2c_mux_present())
-        {
-            // Mux adapters can appear before all of them are added.
-            std::this_thread::sleep_for(300ms);
-            break;
-        }
-        if (elapsed_ms >= mux_timeout_ms)
-        {
-            std::cerr << "bind_i3c_controller: timed out waiting for the i2c "
-                         "mux driver to complete initialization, loading the "
-                         "i3c drivers anyway\n";
-            break;
-        }
-        if (elapsed_ms % 1000 == 0)
-        {
-            std::cerr << std::format("bind_i3c_controller: waiting for the i2c "
-                                     "mux driver, {} ms passed\n",
-                                     elapsed_ms);
-        }
-        std::this_thread::sleep_for(100ms);
-    }
-
-    // Controller drivers must load before HCI and the char/MCTP devices.
-    static constexpr std::array<std::string_view, 6> i3c_modules{
-        "i3c",          "dw_i3c_master", "ast2600_i3c_master",
-        "mipi-i3c-hci", "i3cdev",        "mctp-i3c",
-    };
-    for (const auto module : i3c_modules)
-    {
-        if (modprobe_with_timeout(module, std::chrono::seconds{20}, true) != 0)
-        {
-            std::cerr << std::format("bind_i3c_controller: failed to load {} "
-                                     "module\n",
-                                     module);
-            return EXIT_FAILURE;
-        }
-    }
-
-    std::cerr << "bind_i3c_controller: I3C driver modules loaded\n";
-    return EXIT_SUCCESS;
 }
 
 } // namespace nvidia
@@ -1194,9 +964,7 @@ void hw_mgmt_boot_start(std::span<const CartridgeBoard> cartridge_boards,
 
     std::string devtree;
     const auto hid = read_trimmed_newlines(config + "/hid");
-    std::string json_path = "/etc/hw-management-cfg/devtree.json";
-    if (!std::filesystem::is_regular_file(json_path))
-        json_path = std::format("/etc/hw-management-cfg/{}/devtree.json", hid);
+    const std::string json_path = "/etc/hw-management-cfg/devtree.json";
     if (hid.empty())
         std::cerr << "SMBIOS BOM info: SKU is not available\n";
     else if (!std::filesystem::is_regular_file(json_path))
@@ -1225,6 +993,58 @@ void hw_mgmt_boot_start(std::span<const CartridgeBoard> cartridge_boards,
     if (!devtree.empty())
         std::ofstream{devtree_path, std::ios::trunc} << devtree;
     std::cerr << "hw-management: init completed\n";
+}
+
+void recover_external_rtc(std::string_view tag)
+{
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    for (const auto& e :
+         fs::directory_iterator("/sys/bus/i2c/drivers/pcf85053a", ec))
+    {
+        const auto name = e.path().filename().string();
+        unsigned bus = 0;
+        unsigned addr = 0;
+        if (std::sscanf(name.c_str(), "%u-%x", &bus, &addr) != 2)
+            continue;
+        auto reg = [&](uint8_t r, int val = -1) {
+            std::array<uint8_t, 2> w{r, static_cast<uint8_t>(val)};
+            std::array<uint8_t, 1> rd{};
+            const bool read = val < 0;
+            if (i2c::raw_transfer(bus, static_cast<uint8_t>(addr),
+                                  std::span(w).first(read ? 1 : 2),
+                                  std::span(rd).first(read ? 1 : 0)))
+                return -1;
+            return read ? int{rd[0]} : 0;
+        };
+        const int status = reg(0x0b);
+        if (status > 0 && (status & 0x70))
+        {
+            std::cerr << std::format("{}: RTC unreliable time flags 0x{:02x}; "
+                                     "clearing\n",
+                                     tag, status);
+            const int ctrl = reg(0x0b, status & 0x07) < 0 ? -1 : reg(0x0a);
+            if (ctrl < 0 || ((ctrl & 0x80) && reg(0x0a, ctrl & ~0x80) < 0))
+                std::cerr << std::format("{}: RTC flag recovery failed\n", tag);
+        }
+        for (const auto& r : fs::directory_iterator(e.path() / "rtc", ec))
+        {
+            if (detail::sysfs_read((r.path() / "hctosys").string()) == "1")
+                return;
+            std::time_t epoch = 0;
+            const auto v =
+                detail::sysfs_read((r.path() / "since_epoch").string());
+            if (v &&
+                std::from_chars(v->data(), v->data() + v->size(), epoch).ec ==
+                    std::errc{})
+            {
+                std::cerr << std::format("{}: clock set from {} ({})\n", tag,
+                                         r.path().filename().string(), epoch);
+                set_system_clock(epoch);
+            }
+            return;
+        }
+    }
 }
 
 } // namespace nvidia
