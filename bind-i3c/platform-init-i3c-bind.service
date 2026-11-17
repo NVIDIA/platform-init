@@ -1,0 +1,8 @@
+[Unit]
+Description=Bind the deferred I3C controller
+After=platform_init.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/platform-init-i3c-bind
+SyslogIdentifier=platform-init-i3c-bind

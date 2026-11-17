@@ -1,0 +1,16 @@
+[Unit]
+Description=Flush queued early eMMC logs to phosphor logging
+After=nvidia-emmc-partition.service
+After=xyz.openbmc_project.Logging.service
+Wants=xyz.openbmc_project.Logging.service
+ConditionPathExists=/run/nvidia-emmc-early-logs
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sleep 10
+ExecStart=/usr/libexec/nvidia-emmc-partition --flush-early-logs
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,19 @@
+[Unit]
+Description=NVIDIA eMMC partition
+# Ordering-only (no Requires=): platforms without x86-power-control are
+# unaffected, systemd ignores ordering against a unit that never exists.
+After=xyz.openbmc_project.Chassis.Control.Power@0.service
+
+[Service]
+Type=oneshot
+# fsck on a multi-GiB partition can exceed the 90s default, and being killed
+# mid-repair skips the reformat fallback.
+TimeoutStartSec=600
+RemainAfterExit=yes
+# 2 = eMMC opted out via u-boot env, 4 = EUDA awaiting a power-on-reset.
+SuccessExitStatus=2 4
+ExecStart=/usr/libexec/nvidia-emmc-partition mmcblk0
+SyslogIdentifier=emmc-partition
+
+[Install]
+WantedBy=multi-user.target

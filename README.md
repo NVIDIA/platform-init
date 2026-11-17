@@ -1,154 +1,82 @@
-# __NVIDIA_OSS__ Standard Repo Template
+# platform-init
 
-This README file is from the NVIDIA_OSS standard repo template of [PLC-OSS-Template](https://github.com/NVIDIA-GitHub-Management/PLC-OSS-Template?tab=readme-ov-file). It provides a list of files in the PLC-OSS-Template and guidelines on how to use (clone and customize) them.
+Platform initialization utilities for OpenBMC-based systems.
 
-**Upon completing the customization for the project repo, the repo admin should replace this README template with the project specific README file.**
+## Overview
 
-- Files (org-wide templates in the NVIDIA .github org repo; per-repo overrides allowed) in [PLC-OSS-Template](https://github.com/NVIDIA-GitHub-Management/PLC-OSS-Template?tab=readme-ov-file)
+`platform-init` provides hardware-specific initialization for supported Intel and
+NVIDIA platforms. The `platform` executable selects the initialization routine
+for the configured platform and integrates with systemd.
 
-   - Root 
-     - README.md skeleton (CTA + Quickstart + Support/Security/Governance links) 
-     - LICENSE (Apache 2.0 by default)
-        - For other licenses, see the [Confluence page](https://confluence.nvidia.com/pages/viewpage.action?pageId=788418816) for other licenses
-        - CLA.md file (delete if not using MIT or BSD licenses)
-     - CODE_OF_CONDUCT.md 
-     - SECURITY.md (vuln reporting path) 
-     - CONTRIBUTING.md (base; repo can add specifics)
-     - SUPPORT.md (Support levels/channels)
-     - GOVERNANCE.md (baseline; repo may extend)
-     - CITATION.md (for projects that need citation)
+The repository also includes platform-specific preparation, RTC detection,
+I2C recovery and MCTP readiness helpers, plus eMMC initialization, monitoring,
+and partition layout utilities.
 
-   - .github/ 
-     - ISSUE_TEMPLATE/ (<https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/configuring-issue-templates-for-your-repository>)
-       - bug.yml, feature.yml, task.yml, config.yml 
-     - PULL_REQUEST_TEMPLATE.md (<https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/creating-a-pull-request-template-for-your-repository>)
-     - workflows/
-     - Note: workflow-templates/ for starter workflows should live in the org-level .github repo, not per-repo
+## Repository layout
 
-   - Repo-specific (not org-template, maintained by the team)
-     - CODEOWNERS (place at .github/CODEOWNERS or repo root)
-     - CHANGELOG.md (or RELEASE.md) 
-     - ROADMAP.md 
-     - MAINTAINERS.md 
-     - NOTICE or THIRD_PARTY_NOTICES / THIRD_PARTY_LICENSES (dependency specific)
-     - Build/package files (CMake, pyproject, Dockerfile, etc.)
+- [`platform.cpp`](platform.cpp): command-line entry point and platform selection.
+- [`platforms/`](platforms/): platform implementations and deployment scripts.
+- [`emmc-manager/`](emmc-manager/): eMMC initialization and monitoring utilities.
+- [`emmc-partition/`](emmc-partition/): eMMC partition layout utilities.
+- [`bind-i3c/`](bind-i3c/): platform-specific I3C binding helper.
+- [`test/`](test/): platform unit tests; component directories contain additional tests.
+- [`subprojects/`](subprojects/): Meson dependency wrap files.
 
-   - Recommended structure and hygiene
-     - docs/
-     - examples/
-     - tests/
-     - scripts/
-     - Container/dev env: Dockerfile, docker/, .devcontainer/ (optional)
-     - Build/package (language-specific):
-       - Python: pyproject.toml, setup.cfg/setup.py, requirements.txt, environment.yml
-       - C++: CMakeLists.txt, cmake/, vcpkg.json
-     - Repo hygiene: .gitignore, .gitattributes, .editorconfig, .pre-commit-config.yaml, .clang-format
+## Building and testing
 
+Build for the target Linux/OpenBMC environment with a C++23-capable toolchain,
+Meson 1.7.0 or newer, and Ninja. Dependencies include libgpiod's C++ bindings,
+systemd/libsystemd, sdbusplus, CLI11, and libi2c. See
+[`meson.build`](meson.build) and the component build files for dependency details.
 
-## Usage of [PLC-OSS-Template](https://github.com/NVIDIA-GitHub-Management/PLC-OSS-Template?tab=readme-ov-file) for NEW NVIDIA OSS repos
+For a native build in an environment with the required dependencies:
 
-1. Clone the [PLC-OSS-Template](https://github.com/NVIDIA-GitHub-Management/PLC-OSS-Template?tab=readme-ov-file)
-2. Find/replace all in the clone of `___PROJECT___` and `__PROJECT_NAME__` with the name of the specific project.
-3. Inspect all files to make sure all replacements work and update text as needed
-
-
-**What you can reuse immediately**
-- CODE_OF_CONDUCT.md
-- SECURITY.md
-- CONTRIBUTING.md (base)
-- .github/ISSUE_TEMPLATE/.yml (bug/feature/task + config.yml)
-- .github/PULL_REQUEST_TEMPLATE.md
-- Reusable workflows 
-
-**What you must customize per repo**
-- README.md: copy the skeleton and fill in product-specific details (Quickstart, Requirements, Usage, Support level, links)
-- LICENSE: check file is correct, update year, consult Confluence for alternatives https://confluence.nvidia.com/pages/viewpage.action?pageId=788418816, add CLA.md only if your license/process requires it
-- CODEOWNERS: replace <TEAM> with your GitHub team handle(s). Place at .github/CODEOWNERS (or repo root)
-- MAINTAINERS.md: list maintainers names/roles, escalation path
-- CHANGELOG.md (or RELEASE.md): track releases/changes
-- SUPPORT.md: Update for your project
-- ROADMAP.md (optional): upcoming milestones
-- NOTICE / THIRD_PARTY_NOTICES (if you ship third‑party content)
-- Build/package files (CMake/pyproject/Dockerfile/etc.), tests/, docs/, examples/, scripts/ as appropriate
-- Workflows: Edit if you need custom behavior 
-
-
-4. Change git origin to point to new repo and push
-5. Remove the line break below and everything above it
-
-## Usage for existing NVIDIA OSS repos
-
-1. Follow the steps above, but add the files to your existing repo and merge
-
-<!-- REMOVE THE LINE BELOW AND EVERYTHING ABOVE -->
------------------------------------------
-# [Project Title]
-One-sentence value proposition for users. Who is it for, and why it matters. 
-
-# Overview
-What the project does? Why the project is useful?
-Provide a brief overview, highlighting key features or problem-solving capabilities.
-
-# Getting Started
-Guide users on how they can get started with the project. This should include basic installation step, quick-start examples 
-```bash
-# Option A: Package manager (pip/conda/npm/etc.)
-<copy-paste install>
-
-# Option B: Container
-docker run <image> <args>
-
-# Verify (hello world)
-<one-liner or ~10-line example>
+```sh
+meson setup build -Dplatform-name=nvidia-gb200
+meson compile -C build
 ```
-# Requirements
-Include a list of pre-requisites. 
-- OS/Arch: <summary or link to full matrix>
-- Runtime/Compiler: <versions>
-- GPU/Drivers (if applicable): CUDA <ver>, driver <ver>, etc.
 
-# Usage
-```bash
-# Minimal runnable snippet (≤20 lines)
-<code>
+For cross-compilation, supply the target environment's Meson cross file.
+Select the target with `platform-name`; the available build options are defined
+in [`meson.options`](meson.options), and supported initialization names are
+listed in [`platform.cpp`](platform.cpp).
+
+To require and run unit tests, install GoogleTest and configure a separate build:
+
+```sh
+meson setup build-test -Dtests=enabled
+meson compile -C build-test
+meson test -C build-test --print-errorlogs
 ```
-- More examples/tutorials: <link>
-- API reference: <link>
 
-# Performance (Optional)
-Summary of benchmarks; link to detailed results and hardware used.
+The default `tests=auto` setting may omit tests when GoogleTest is unavailable.
 
-## Releases & Roadmap 
-- Releases/Changelog: <link>
-- (Optional) Next milestones or link to `ROADMAP.md`.
-  
-# Contribution Guidelines
-- Start here: `CONTRIBUTING.md`
-- Code of Conduct: `CODE_OF_CONDUCT.md`
-- Development quickstart (build/test):
-```bash
-<clone> && <deps> && <build/test>
-```
-## Governance & Maintainers
-- Governance: `GOVERNANCE.md`
-- Maintainers: <team/handles>
-- Labeling/triage policy: <link>
+## Deployment and usage
+
+The generated `platform_init.service` invokes
+`/usr/libexec/platform init` with the configured platform name. See
+[`platform_init.service.in`](platform_init.service.in) for service integration.
+Additional helpers and services are selected by the component build files.
+
+These utilities interact with platform hardware and system state. Deploy and
+run them only on the intended target with the matching hardware configuration,
+not on a development workstation.
+
+## Development
+
+The `main` branch contains a published snapshot of the project.
+Ongoing development is available on the
+[`develop` branch](https://github.com/NVIDIA/platform-init/tree/develop).
+See [`OWNERS`](OWNERS) for the project's ownership information.
 
 ## Security
-- Vulnerability disclosure: `SECURITY.md`
-- Do not file public issues for security reports.
 
-## Support
-- Level: <Experimental | Maintained | Stable>
-- How to get help: Issues/Discussions/<channel link>
-- Response expectations (if any).
+Follow [`SECURITY.md`](SECURITY.md) to report potential security vulnerabilities
+through NVIDIA's private reporting channels. Do not report vulnerabilities in
+public GitHub issues or pull requests.
 
-# Community
-Provide the channel for community communications.
+## License
 
-# References
-Provide a list of related references
-
-# License
-This project is licensed under the [NAME HERE] License - see the LICENSE.md file for details
-- License: <link>
+This project is licensed under the Apache License, Version 2.0.
+See [`LICENSE.txt`](LICENSE.txt). The develop snapshot's [`LICENSE`](LICENSE)
+contains the same license text.
